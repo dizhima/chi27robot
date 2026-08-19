@@ -265,6 +265,17 @@ canvas {
   color: #f6a4a4;
 }
 
+.chat-target-match {
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid rgba(94, 176, 138, 0.5);
+  border-radius: 6px;
+  background: rgba(94, 176, 138, 0.14);
+  color: #b9ebd2;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .chat-rail-composer {
   display: flex;
   flex: 0 0 auto;
@@ -1179,7 +1190,7 @@ canvas {
   background: rgba(10, 14, 18, 0.84);
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
   color: #f7fafc;
-  font: 650 9px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  font: 650 12px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
   letter-spacing: 0.015em;
   white-space: nowrap;
   user-select: none;
@@ -2471,4 +2482,10 @@ html[data-ui-theme="light"] .authoring-ground-error,
 html[data-ui-theme="light"] .authoring-workspace .authoring-delete,
 html[data-ui-theme="light"] .status-panel pre {
   color: #a43d3d;
+}
+
+html[data-ui-theme="light"] .chat-target-match {
+  border-color: rgba(35, 122, 80, 0.35);
+  background: rgba(35, 122, 80, 0.1);
+  color: #1f6f49;
 }

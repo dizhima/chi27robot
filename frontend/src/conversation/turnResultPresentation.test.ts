@@ -34,4 +34,15 @@ describe("turn result presentation", () => {
     expect(turnResultBubbleContent(result)).toBe("Re-checked the plan.");
     expect(turnResultDetails(result)).toBe(result.resolveSummary);
   });
+
+  it("uses one study message for every compound turn when simplified", () => {
+    const result = outcome({
+      authorMessage: "Moved apple_1 to robot1.",
+      resolveWarning: "1 conflict could not be fixed automatically.",
+      resolveSummary: "Resolved all conflicts with 2 adjustments.",
+    });
+
+    expect(turnResultBubbleContent(result, true)).toBe("Plan updated.");
+    expect(turnResultDetails(result)).toBe(result.resolveSummary);
+  });
 });

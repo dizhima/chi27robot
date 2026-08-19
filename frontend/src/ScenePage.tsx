@@ -65,6 +65,7 @@ import {
 import { createEditTailScheduler, type EditTailScheduler } from "./plan/editTail";
 import { type AugmentedAction } from "./plan/authorPlan";
 import type { AuthoredPlan, CompileResponse, RobotName } from "./plan/planTypes";
+import { matchesStudyTarget } from "./plan/studyTargetMatch";
 import {
   listStudyCheckpoints,
   loadStudyCheckpoint,
@@ -106,6 +107,8 @@ const PLAN_SUBTITLES_STORAGE_KEY = "mujoco-plan-task-subtitles";
 const SHOW_SCENE_OBJECT_LABELS = import.meta.env.VITE_SHOW_SCENE_OBJECT_LABELS !== "false";
 const CHECKPOINT_SAVE_ENABLED = import.meta.env.VITE_ENABLE_CHECKPOINT_SAVE === "true";
 const CHECKPOINT_LOAD_ENABLED = import.meta.env.VITE_ENABLE_CHECKPOINT_LOAD === "true";
+const SIMPLE_COMPOUND_OUTPUT = import.meta.env.VITE_STUDY_SIMPLE_COMPOUND_OUTPUT === "true";
+const STUDY_TARGET_LOAD_ENABLED = import.meta.env.VITE_ENABLE_STUDY_TARGET_LOAD === "true";
 
 function initialPlanSubtitlesEnabled(): boolean {
   try {
@@ -135,6 +138,11 @@ type VersionCommitInfo = {
   title: string;
   messages: ConversationMessage[];
   lastResolverReport: unknown | null;
+};
+
+type StudyTarget = {
+  id: string;
+  actions: AugmentedAction[];
 };
 
 function patchedMessages(
@@ -240,9 +248,12 @@ export default function ScenePage() {
   const [savedCheckpoints, setSavedCheckpoints] = useState<SavedCheckpointSummary[]>([]);
   const [checkpointSaving, setCheckpointSaving] = useState(false);
   const [checkpointActivity, setCheckpointActivity] = useState<string | null>(null);
+  const [studyTarget, setStudyTarget] = useState<StudyTarget | null>(null);
+  const [targetLoading, setTargetLoading] = useState(false);
+  const [targetError, setTargetError] = useState<string | null>(null);
 
   const refreshSavedCheckpoints = useCallback(async () => {
-    if (!CHECKPOINT_LOAD_ENABLED) return;
+    if (!CHECKPOINT_LOAD_ENABLED && !STUDY_TARGET_LOAD_ENABLED) return;
     try {
       setSavedCheckpoints(await listStudyCheckpoints());
     } catch (error) {
@@ -253,6 +264,12 @@ export default function ScenePage() {
   useEffect(() => {
     void refreshSavedCheckpoints();
   }, [refreshSavedCheckpoints, sceneConfig.sceneFile]);
+
+  useEffect(() => {
+    setStudyTarget(null);
+    setTargetLoading(false);
+    setTargetError(null);
+  }, [sceneConfig.sceneFile]);
 
   const sceneCheckpoints = savedCheckpoints.filter(
     (checkpoint) => checkpoint.sceneFile === sceneConfig.sceneFile,
@@ -313,6 +330,12 @@ export default function ScenePage() {
   // Author or Resolver via runConversationTurn -> terminal outcome applied.
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [semanticActions, setSemanticActions] = useState<AugmentedAction[]>([]);
+  const targetMatched = useMemo(
+    () => studyTarget !== null
+      && !dirty
+      && matchesStudyTarget(semanticActions, studyTarget.actions),
+    [dirty, semanticActions, studyTarget],
+  );
   // Inline Cursor-style scene references attached to the next turn: an object
   // (double-click a body) is an object ref (highlight only); a surface/floor
   // point is a position ref (pin marker). Ordered; each has a stable id linking
@@ -726,6 +749,9 @@ export default function ScenePage() {
     setVersionHistory(EMPTY_VERSION_HISTORY);
     setMessages([]);
     setSemanticActions([]);
+    setStudyTarget(null);
+    setTargetLoading(false);
+    setTargetError(null);
     setChatError(null);
     setLastResolverReport(null);
     setContextRefs([]);
@@ -803,6 +829,9 @@ export default function ScenePage() {
     setCheckpointActivity(`Loading checkpoint ${checkpointId}…`);
     try {
       const checkpoint = await loadStudyCheckpoint(checkpointId);
+      setStudyTarget(null);
+      setTargetLoading(false);
+      setTargetError(null);
       cancelPendingEditTail();
       editEpisodeRef.current = null;
       manualEditBaselineRef.current = null;
@@ -840,6 +869,22 @@ export default function ScenePage() {
       setCheckpointActivity(`Checkpoint load failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setVersionSwitching(false);
+    }
+  };
+
+  const loadTargetCheckpoint = async (checkpointId: string) => {
+    if (!checkpointId || turnBusy || targetLoading) return;
+    setTargetLoading(true);
+    setTargetError(null);
+    try {
+      const checkpoint = await loadStudyCheckpoint(checkpointId);
+      setStudyTarget({ id: checkpoint.id, actions: checkpoint.snapshot.semanticActions });
+    } catch (error) {
+      setTargetError(
+        `Target load failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      setTargetLoading(false);
     }
   };
 
@@ -947,7 +992,7 @@ export default function ScenePage() {
       const finalMessagePatch: Partial<ConversationMessage> = {
         status: "done",
         source: outcome.actions !== undefined ? "authoring" : "resolver",
-        content: turnResultBubbleContent(outcome),
+        content: turnResultBubbleContent(outcome, SIMPLE_COMPOUND_OUTPUT),
         details: turnResultDetails(outcome),
       };
       const applied = await commitOutcome(outcome, "chat", sentEdits, {
@@ -1404,7 +1449,7 @@ export default function ScenePage() {
         const finalMessagePatch: Partial<ConversationMessage> = {
           status: "done",
           source: "resolver",
-          content: turnResultBubbleContent(outcome),
+          content: turnResultBubbleContent(outcome, SIMPLE_COMPOUND_OUTPUT),
           details: turnResultDetails(outcome),
         };
         const applied = await commitOutcome(outcome, hasPendingEdits ? "edit" : "sync", sentEdits, {
@@ -1891,6 +1936,16 @@ export default function ScenePage() {
                   {chatError}
                 </p>
               ) : null}
+              {targetError ? (
+                <p className="chat-rail-error" role="alert">
+                  {targetError}
+                </p>
+              ) : null}
+              {targetMatched ? (
+                <p className="chat-target-match" role="status">
+                  Target matched — round complete.
+                </p>
+              ) : null}
             </div>
             <div className="chat-rail-composer">
               <div className={`composer-box${pickMode || planRefMode ? " is-picking" : ""}`}>
@@ -2117,6 +2172,32 @@ export default function ScenePage() {
                       ))}
                     </optgroup>
                   ) : null}
+                </select>
+              ) : null}
+              {STUDY_TARGET_LOAD_ENABLED ? (
+                <select
+                  className="gantt-version-select"
+                  aria-label="Target checkpoint"
+                  value={studyTarget?.id ?? ""}
+                  onFocus={() => void refreshSavedCheckpoints()}
+                  onChange={(event) => {
+                    const checkpointId = event.target.value;
+                    if (!checkpointId) {
+                      setStudyTarget(null);
+                      setTargetError(null);
+                      return;
+                    }
+                    void loadTargetCheckpoint(checkpointId);
+                  }}
+                  disabled={turnBusy || targetLoading}
+                  title="Load a checkpoint as the hidden study target"
+                >
+                  <option value="">{targetLoading ? "Loading target…" : "Load target…"}</option>
+                  {sceneCheckpoints.map((checkpoint) => (
+                    <option key={checkpoint.id} value={checkpoint.id}>
+                      Target: {checkpoint.id}
+                    </option>
+                  ))}
                 </select>
               ) : null}
             </>

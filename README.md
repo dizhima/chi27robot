@@ -90,10 +90,13 @@ The following data is not required for a clean first launch of the default study
 - raw demonstration folders directly under
   `trajectories/layout042_study/robot0/` and `robot1/`: only needed when rebuilding
   canonical tracks
-- `candidate_previews/`, `layout042_sorting_candidates/`, preview images, and the
-  duplicate `robocasa.zip`
+- `candidate_previews/`, preview images, and the duplicate `robocasa.zip`
+- `frontend/public/legacy/layout042_sorting_candidates/`: archived candidate
+  scenes used only by the corresponding development render scripts
 - old warehouse, indoor, Franka, Fetch, Stretch, and non-RoboCasa assets when those
   scenes are no longer used
+- `frontend/public/legacy/`: retired non-RoboCasa assets kept locally for reference;
+  omit this directory from the default runtime archive
 - trajectories for layouts other than the active study
 
 If another scene is selected, it needs the same combination of scene XML/MJB,

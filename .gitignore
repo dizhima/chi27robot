@@ -16,6 +16,8 @@ backend/*.png
 
 # 编译缓存（体积大，换机器可重新生成）
 **/*.mjb
+*zip
+docs/*.png
 
 # 密钥（切勿提交）
 .env

@@ -123,7 +123,7 @@ CONTAINER_MOTION_KEYS = {
     "slot_center_frac",
     "slot_fracs", "reachin_lift_height",
     "ik_eef_tolerance", "randomize_preinsert_first", "ik_top_down",
-    "rrt_horizontal_ingress", "simple_ingress",
+    "rrt_horizontal_ingress", "simple_ingress", "nearby_rrt_fallback",
 }
 
 

@@ -180,6 +180,11 @@ YAW_SPEED = 1.5   # rad/s
 # transition so a tiny displacement does not acquire an arbitrary travel
 # heading and make the robot turn away, move, then turn back.
 NEAR_NAV_COLLAPSE_DISTANCE = 0.05
+# A completed plan echoes the compiler-derived navigate standoff back into the
+# next request.  Keep that stable for tiny placement-marker corrections, but a
+# meaningful move of the drop point must invalidate the old stance and solve a
+# new one around the edited point.
+PLACEMENT_STANDOFF_RECOMPUTE_DISTANCE = 0.15
 
 RRT_SEED = 42042
 RRT_STEP = 0.22
@@ -1380,6 +1385,15 @@ def gen_pick(rig, q_start, obj_name, label=None, grasp_mode="top_down",
     return track, back, (off_pos, off_quat)
 
 
+def _upright_release_pose(raw_pose, rest_quat):
+    """Remove release roll/pitch while preserving the motion-selected yaw."""
+    raw_pos, raw_quat = raw_pose
+    desired_up = quat_rot(rest_quat, np.array([0.0, 0.0, 1.0]))
+    raw_up = quat_rot(raw_quat, np.array([0.0, 0.0, 1.0]))
+    correction = quat_align_vectors(raw_up, desired_up)
+    return raw_pos, quat_mul(correction, raw_quat)
+
+
 def gen_place(rig, q_start, obj_name, dest_xyz, off, label=None):
     """Arm: ready(holding) -> above dest -> down -> open -> back to ready.
     Base assumed already at the destination standoff."""
@@ -1413,14 +1427,7 @@ def gen_place(rig, q_start, obj_name, dest_xyz, off, label=None):
     # segments: start->pre->drop->opened->back. Held through the drop (segs 0..2);
     # released at seg 3 (back) and left where it was dropped.
     raw_released_pose = _carried_pose(rig, opened, off_pos, off_quat)
-    raw_released_up = quat_rot(
-        raw_released_pose[1], np.array([0.0, 0.0, 1.0]))
-    upright_correction = quat_align_vectors(
-        raw_released_up, desired_obj_up)
-    released_pose = (
-        raw_released_pose[0],
-        quat_mul(upright_correction, raw_released_pose[1]),
-    )
+    released_pose = _upright_release_pose(raw_released_pose, rest_quat)
     obj = {
         "name": obj_name, "attach_from_seg": 0, "detach_from_seg": 3,
         "off_pos": off_pos, "off_quat": off_quat, "static_pose": released_pose,
@@ -1650,7 +1657,8 @@ def gen_place_reachin(rig, q_start, obj_name, interior_body, off, label=None,
                       ik_top_down=False, rrt_horizontal_ingress=False,
                       reachin_lift_height=None, simple_ingress=True,
                       release_clearance=0.01,
-                      cartesian_rrt_fallback=False):
+                      cartesian_rrt_fallback=False,
+                      nearby_rrt_fallback=False):
     """Collision-checked horizontal reach-in place into an open container.
 
     The base remains fixed. RRT-Connect first reaches a collision-free high pose
@@ -1975,20 +1983,31 @@ def gen_place_reachin(rig, q_start, obj_name, interior_body, off, label=None,
         # fallback when the local IK follows a bad redundant-arm branch.
         segment_goal = None
         for attempt in range(48):
-            candidate = (
-                forward[-1].copy()
-                if attempt == 0 and seed_from_current
-                else scene_q.copy()
-            )
-            candidate[rig.TORSO] = (
-                candidate[rig.TORSO]
-                if attempt == 0 and seed_from_current
-                else torso_range[1] if attempt == 0
-                else rng.uniform(*torso_range)
-            )
-            if not (attempt == 0 and seed_from_current):
-                candidate[rig.ARM] = [
-                    rng.uniform(lo, hi) for lo, hi in limits[1:]]
+            if seed_from_current and nearby_rrt_fallback and attempt < 24:
+                candidate = forward[-1].copy()
+                if attempt:
+                    candidate[rig.TORSO] = np.clip(
+                        candidate[rig.TORSO] + rng.uniform(-0.05, 0.05),
+                        *torso_range)
+                    candidate[rig.ARM] = [
+                        np.clip(value + rng.normal(0.0, 0.25), lo, hi)
+                        for value, (lo, hi) in zip(
+                            candidate[rig.ARM], limits[1:])
+                    ]
+            else:
+                candidate = (
+                    forward[-1].copy()
+                    if attempt == 0 and seed_from_current
+                    else scene_q.copy()
+                )
+                candidate[rig.TORSO] = (
+                    candidate[rig.TORSO]
+                    if attempt == 0 and seed_from_current
+                    else torso_range[1] if attempt == 0
+                    else rng.uniform(*torso_range))
+                if not (attempt == 0 and seed_from_current):
+                    candidate[rig.ARM] = [
+                        rng.uniform(lo, hi) for lo, hi in limits[1:]]
             candidate, _, eef_error, obj_error = solve_carried_target(
                 candidate, target_obj)
             if (eef_error <= ik_eef_tolerance and obj_error <= 0.015
@@ -2021,13 +2040,19 @@ def gen_place_reachin(rig, q_start, obj_name, interior_body, off, label=None,
         except ValueError as exc:
             if not cartesian_rrt_fallback:
                 raise
-            # The Cartesian helper appends each successful prefix waypoint.
-            # Remove that prefix before planning one clean joint-space segment
-            # from the original pre-insert pose.
-            del forward[horizontal_start_len:]
             horizontal_ingress_planner = "rrt_fallback"
             horizontal_fallback_reason = str(exc)
-            append_rrt_segment(inside_high_obj, "fridge interior-high")
+            if nearby_rrt_fallback:
+                # Keep the collision-free Cartesian prefix and plan only the
+                # short remainder from its last valid waypoint. Discarding it
+                # makes deep-but-reachable cabinet targets restart a global
+                # RRT at the opening and multiplies collision checks.
+                append_rrt_segment(
+                    inside_high_obj, "container interior-high",
+                    seed_from_current=True)
+            else:
+                del forward[horizontal_start_len:]
+                append_rrt_segment(inside_high_obj, "fridge interior-high")
 
     vertical_lower_planner = "cartesian"
     vertical_fallback_reason = None
@@ -2072,7 +2097,10 @@ def gen_place_reachin(rig, q_start, obj_name, interior_body, off, label=None,
         max(0.15, float(np.max(np.abs(b[plan_adrs] - a[plan_adrs]))) / RRT_ARM_SPEED)
         for a, b in zip(waypoints, waypoints[1:])
     ]
-    released_pose = _carried_pose(rig, opened, off_pos, off_quat)
+    raw_released_pose = _carried_pose(rig, opened, off_pos, off_quat)
+    rest_quat = _rest_obj_pose(rig, obj_name)[1]
+    desired_obj_up = quat_rot(rest_quat, np.array([0.0, 0.0, 1.0]))
+    released_pose = _upright_release_pose(raw_released_pose, rest_quat)
     obj = {
         "name": obj_name,
         "attach_from_seg": 0,
@@ -2080,8 +2108,13 @@ def gen_place_reachin(rig, q_start, obj_name, interior_body, off, label=None,
         "off_pos": off_pos,
         "off_quat": off_quat,
         "static_pose": released_pose,
+        "orient_to_static_from_seg": len(forward) - 1,
     }
     track = build_track(rig, label, waypoints, durations, obj)
+    released_up = quat_rot(released_pose[1], np.array([0.0, 0.0, 1.0]))
+    track["meta"]["object_up_alignment"] = float(
+        np.dot(released_up, desired_obj_up)
+        / (np.linalg.norm(released_up) * np.linalg.norm(desired_obj_up)))
     planner_elapsed = time.perf_counter() - planner_started
     track["meta"].update({
         "planner": "rrt_connect+cartesian_ik",
@@ -2492,14 +2525,14 @@ def standoff_for_point(rig, target_xy, working_q=None, exclude_bodies=(),
 
 
 def _pinned_surface_standoff(rig, facility, next_step, q,
-                             placement_regions):
+                             placement_regions, navigate_step=None):
     """Compute a request-local stance for a navigate feeding a pinned place.
 
     Static ``standoffs.json`` entries remain the facility default. A surface
-    runtime pin or object-specific manifest slot is more specific: stand within
-    arm reach of that point and face it, so the arm does not compensate sideways
-    from the counter midpoint. Container anchors are excluded until their moving
-    local frame is supported.
+    runtime pin, object-specific manifest slot, or materially edited placement
+    point is more specific: stand within arm reach of that point and face it, so
+    the arm does not compensate sideways from the counter midpoint. Container
+    anchors are excluded until their moving local frame is supported.
     """
     if not next_step or next_step.get("op") != "place":
         return None
@@ -2508,7 +2541,38 @@ def _pinned_surface_standoff(rig, facility, next_step, q,
     region = placement_regions.get(facility) or {}
     if region.get("kind", "surface") != "surface":
         return None
-    anchor = next_step.get("at_anchor")
+    # ``at`` is the scene-dragged, final placement point. Completed plans also
+    # contain a compiler-echoed ``at``, so do not blindly prefer it: compare it
+    # with the placement reference that produced the old stance and only
+    # invalidate that stance once the point moved far enough to matter. With
+    # no previous metadata (a freshly authored explicit point), solve from
+    # ``at``.
+    anchor = None
+    at = next_step.get("at")
+    previous_face = (
+        navigate_step.get("face_xy")
+        if isinstance(navigate_step, dict) else None)
+    # New completed plans carry the exact placement point from which their
+    # current stance was solved.  This avoids mistaking an automatically
+    # distributed point (which may be far from a facility's generic face_xy)
+    # for a user edit on an otherwise untouched round trip. ``previous_face``
+    # remains the compatibility reference for completed plans made before this
+    # field existed.
+    reference = next_step.get("standoff_at")
+    if not (isinstance(reference, (list, tuple)) and len(reference) >= 2):
+        reference = previous_face
+    if isinstance(at, (list, tuple)) and len(at) >= 2:
+        if not (isinstance(reference, (list, tuple))
+                and len(reference) >= 2):
+            anchor = at
+        else:
+            moved = float(np.linalg.norm(
+                np.asarray(at[:2], dtype=float)
+                - np.asarray(reference[:2], dtype=float)))
+            if moved > PLACEMENT_STANDOFF_RECOMPUTE_DISTANCE:
+                anchor = at
+    if anchor is None:
+        anchor = next_step.get("at_anchor")
     if not isinstance(anchor, (list, tuple)) or len(anchor) < 2:
         object_name = next_step.get("object")
         anchor = (region.get("object_slot_points") or {}).get(object_name)
@@ -3840,7 +3904,8 @@ def compile_robot(rig, robot_name, steps, standoffs, tracks_dir, facilities,
                     final_q = _skill_entry_pose(rig, q, entry_track)
             if dest is None and tgt is not None:
                 pinned_dest = _pinned_surface_standoff(
-                    rig, tgt, nxt, q, placement_regions)
+                    rig, tgt, nxt, q, placement_regions,
+                    navigate_step=step)
                 if pinned_dest is not None:
                     dest = pinned_dest
                     pin_standoff_used = True
@@ -3994,7 +4059,9 @@ def compile_robot(rig, robot_name, steps, standoffs, tracks_dir, facilities,
                      simple_ingress=region.get("simple_ingress", True),
                      release_clearance=region.get("release_clearance", 0.01),
                      cartesian_rrt_fallback=region.get(
-                         "cartesian_rrt_fallback", False))
+                         "cartesian_rrt_fallback", False),
+                     nearby_rrt_fallback=region.get(
+                         "nearby_rrt_fallback", False))
             else:
                 raise ValueError(
                     f"unknown place access '{access}' for facility '{facility}'")
@@ -4174,6 +4241,11 @@ def compile_robot(rig, robot_name, steps, standoffs, tracks_dir, facilities,
                 cstep["standoff_source"] = "pin"
         if op == "place":
             cstep["at"] = place_xyz
+            # Reference used to decide whether a later scene drag moved the
+            # placement far enough to require a new navigation stance. Reset
+            # it after every successful solve so the threshold is local to the
+            # latest compiled placement, not the original authoring default.
+            cstep["standoff_at"] = place_xyz[:2]
         if op == "reset":
             cstep["retreat"] = tr["meta"]["retreat_distance"]
             cstep["preserve_yaw"] = tr["meta"]["preserve_yaw"]
@@ -4583,7 +4655,7 @@ def _path_cluster_key(a_segment, b_segment):
     )
 
 
-def _continuous_path_conflicts(items, last_order):
+def _continuous_path_conflicts(items, last_order, focus_step_id=None):
     """Continuous proximity conflicts over complete robot occupancy timelines."""
     timelines = _base_occupancy_segments(items)
     robot_names = sorted(timelines)
@@ -4596,7 +4668,12 @@ def _continuous_path_conflicts(items, last_order):
                 segment_a, segment_b = segments_a[index_a], segments_b[index_b]
                 lo = max(segment_a["t0"], segment_b["t0"])
                 hi = min(segment_a["t1"], segment_b["t1"])
-                if lo < hi - 1e-12:
+                focused = (
+                    focus_step_id is None
+                    or segment_a["item"]["id"] == focus_step_id
+                    or segment_b["item"]["id"] == focus_step_id
+                )
+                if focused and lo < hi - 1e-12:
                     min_dist, at_xy, at_time = _continuous_segment_distance(
                         segment_a, segment_b, lo, hi)
                     if min_dist < STANDOFF_MIN_DIST:
@@ -4693,7 +4770,7 @@ def _continuous_path_conflicts(items, last_order):
     return conflicts
 
 
-def detect_conflicts(items):
+def detect_conflicts(items, focus_step_id=None):
     """Structured conflicts (surfaced, not resolved — DG3). Each record has a
     `kind` (placement | facility | object | path), the two step ids/robots, the
     overlap `window` (None for the time-independent placement check), a `detail`
@@ -4710,13 +4787,20 @@ def detect_conflicts(items):
 
     compile_plan renders `warnings` as [c["message"] for c in conflicts], so the
     existing string surface (and its `robot/label` tokens the UI tints bars on)
-    is preserved verbatim."""
+    is preserved verbatim.
+
+    ``focus_step_id`` returns the exact projection involving one current step.
+    Compiler V2 uses it after a verified prefix: historical pairs cannot become
+    newly conflicting until one of their steps changes, so recomputing them on
+    every reservation check is redundant.
+    """
     last_order = _last_step_by_robot(items)
     # Facility sharing uses the exact same continuous base-clearance standard
     # as path collision detection.  Compute it once and retain the historical
     # facility record only for same-facility step pairs that are physically
     # closer than STANDOFF_MIN_DIST; a shared label alone is not contention.
-    path_conflicts = _continuous_path_conflicts(items, last_order)
+    path_conflicts = _continuous_path_conflicts(
+        items, last_order, focus_step_id=focus_step_id)
     path_proximity = {}
     for conflict in path_conflicts:
         key = frozenset(conflict["steps"])
@@ -4729,6 +4813,9 @@ def detect_conflicts(items):
     for i in range(len(items)):
         for j in range(i + 1, len(items)):
             a, b = items[i], items[j]
+            if (focus_step_id is not None
+                    and focus_step_id not in (a["id"], b["id"])):
+                continue
             # placement collision — time-independent
             if a["place_xyz"] and b["place_xyz"]:
                 d = float(np.linalg.norm(np.array(a["place_xyz"]) - np.array(b["place_xyz"])))
@@ -4869,7 +4956,8 @@ def _select_incremental_ready(programs, cursors, robot_end, completed_end):
 def _incremental_candidate_conflicts(anchors, committed, candidates, step_id):
     return [
         conflict
-        for conflict in detect_conflicts([*anchors, *committed, *candidates])
+        for conflict in detect_conflicts(
+            [*anchors, *committed, *candidates], focus_step_id=step_id)
         if conflict.get("kind") in ("path", "facility")
         and step_id in conflict.get("steps", [])
     ]
@@ -5167,10 +5255,18 @@ def _container_dependency_order(plans, manifest):
             node for node in nodes
             if _step_skill_name(node[1]) == required_open
         ] if required_open else []
-        if required_open and len(open_nodes) != 1:
+        initial_state = (
+            (spec.get("articulation") or {}).get("initial_state")
+            or (manifest.get("state_model", {}).get(facility, {}) or {}).get(
+                "initial")
+            or "closed"
+        )
+        expected_open_count = 0 if initial_state == "open" else 1
+        if required_open and len(open_nodes) != expected_open_count:
             raise ValueError(
-                f"container '{facility}' requires exactly one "
-                f"'{required_open}' before placement; found {len(open_nodes)}")
+                f"container '{facility}' starts {initial_state!r} and requires "
+                f"{expected_open_count} '{required_open}' step(s) before "
+                f"placement; found {len(open_nodes)}")
         open_node = open_nodes[0] if open_nodes else None
 
         close_name = (

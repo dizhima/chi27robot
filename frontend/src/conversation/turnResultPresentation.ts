@@ -3,7 +3,8 @@ import type { TurnOutcome } from "./conversationTypes";
 type TurnResult = Extract<TurnOutcome, { kind: "turn_result" }>;
 
 /** Main assistant bubble. Detailed compiler/resolver adjustments never leak here. */
-export function turnResultBubbleContent(outcome: TurnResult): string {
+export function turnResultBubbleContent(outcome: TurnResult, simplified = false): string {
+  if (simplified) return "Plan updated.";
   if (outcome.authorMessage) {
     return outcome.resolveWarning
       ? `${outcome.authorMessage}\n\n${outcome.resolveWarning}`
