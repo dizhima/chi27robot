@@ -1,0 +1,309 @@
+diff --git a/node_modules/mujoco-react/dist/index.js b/node_modules/mujoco-react/dist/index.js
+index 222dd4a..79a9147 100644
+--- a/node_modules/mujoco-react/dist/index.js
++++ b/node_modules/mujoco-react/dist/index.js
+@@ -510,6 +510,19 @@ function ensureDir(mujoco, fname) {
+   }
+ }
+ function loadModelFromPath(mujoco, path) {
++  if (path.toLowerCase().endsWith(".mjb")) {
++    if (!mujoco.MjModel.from_binary_path) {
++      throw new Error("MuJoCo WASM module does not expose a binary (.mjb) path loader");
++    }
++    // from_binary_path requires an MjVFS argument; an empty VFS makes MuJoCo
++    // fall back to the Emscripten filesystem where the file was written.
++    const vfs = new mujoco.MjVFS();
++    try {
++      return mujoco.MjModel.from_binary_path(path, vfs);
++    } finally {
++      vfs.delete();
++    }
++  }
+   if (mujoco.MjModel.from_xml_path) {
+     return mujoco.MjModel.from_xml_path(path);
+   }
+@@ -945,10 +958,13 @@ var GeomBuilder = class {
+       rgba[out + 3] = a;
+     }
+     const texture = new THREE11.DataTexture(rgba, width, height, THREE11.RGBAFormat);
+-    texture.colorSpace = THREE11.LinearSRGBColorSpace;
++    texture.colorSpace = THREE11.SRGBColorSpace;
+     texture.wrapS = THREE11.RepeatWrapping;
+     texture.wrapT = THREE11.RepeatWrapping;
+-    texture.flipY = true;
++    texture.magFilter = THREE11.LinearFilter;
++    texture.minFilter = THREE11.LinearMipmapLinearFilter;
++    texture.generateMipmaps = true;
++    texture.flipY = false;
+     const repeatOffset = matId * 2;
+     const repeatS = mjModel.mat_texrepeat?.[repeatOffset] ?? 1;
+     const repeatT = mjModel.mat_texrepeat?.[repeatOffset + 1] ?? 1;
+@@ -957,12 +973,73 @@ var GeomBuilder = class {
+     this.textureCache.set(texId, texture);
+     return texture;
+   }
++  buildMeshGeometry(mjModel, mId) {
++    const vAdr = Number(mjModel.mesh_vertadr[mId]);
++    const vNum = Number(mjModel.mesh_vertnum[mId]);
++    const fAdr = Number(mjModel.mesh_faceadr[mId]);
++    const fNum = Number(mjModel.mesh_facenum[mId]);
++    const tAdr = Number(mjModel.mesh_texcoordadr[mId]);
++    const tNum = Number(mjModel.mesh_texcoordnum[mId]);
++    const verts = mjModel.mesh_vert;
++    const faces = mjModel.mesh_face;
++    const facetex = mjModel.mesh_facetexcoord;
++    const texcoords = mjModel.mesh_texcoord;
++    const hasUV = tNum > 0 && tAdr >= 0 && !!texcoords && !!facetex;
++    const faceOffset = fAdr * 3;
++    const faceCount = fNum * 3;
++    const faceIndices = faces.subarray(faceOffset, faceOffset + faceCount);
++    const finalize = (geometry) => {
++      const smoothingTolerance = this.getMeshNormalSmoothingTolerance();
++      if (smoothingTolerance !== null && !geometry.getAttribute("uv")) {
++        const merged = mergeVertices(geometry, smoothingTolerance);
++        merged.computeVertexNormals();
++        return merged;
++      }
++      geometry.computeVertexNormals();
++      return geometry;
++    };
++    if (!hasUV) {
++      const geometry = new THREE11.BufferGeometry();
++      const positionArray = new Float32Array(verts.subarray(vAdr * 3, (vAdr + vNum) * 3));
++      geometry.setAttribute("position", new THREE11.Float32BufferAttribute(positionArray, 3));
++      let maxFaceIdx = 0;
++      for (let i = 0; i < faceCount; i += 1) {
++        if (faceIndices[i] > maxFaceIdx) maxFaceIdx = faceIndices[i];
++      }
++      if (maxFaceIdx > 65535) {
++        geometry.setIndex(new THREE11.Uint32BufferAttribute(faceIndices, 1));
++      } else {
++        geometry.setIndex(Array.from(faceIndices));
++      }
++      return finalize(geometry);
++    }
++    const positions = new Float32Array(fNum * 9);
++    const uvs = new Float32Array(fNum * 6);
++    let pi = 0;
++    let ui = 0;
++    for (let i = 0; i < faceCount; i += 1) {
++      const vi = faces[faceOffset + i];
++      const ti = facetex[faceOffset + i];
++      const vj = (vAdr + vi) * 3;
++      positions[pi++] = verts[vj];
++      positions[pi++] = verts[vj + 1];
++      positions[pi++] = verts[vj + 2];
++      const tj = (tAdr + ti) * 2;
++      uvs[ui++] = texcoords[tj];
++      uvs[ui++] = texcoords[tj + 1];
++    }
++    const geometry = new THREE11.BufferGeometry();
++    geometry.setAttribute("position", new THREE11.BufferAttribute(positions, 3));
++    geometry.setAttribute("uv", new THREE11.BufferAttribute(uvs, 2));
++    return finalize(geometry);
++  }
+   /**
+    * Creates a Three.js Object3D (usually a Mesh) for a specific geometry in the MuJoCo model.
+    * Returns null if the geometry shouldn't be rendered (e.g., invisible collision triggers).
+    */
+   create(mjModel, g) {
+-    if (mjModel.geom_group[g] === 3) return null;
++    const group = mjModel.geom_group[g];
++    if (group === 0 || group === 3) return null;
+     const type = mjModel.geom_type[g];
+     const size = mjModel.geom_size.subarray(g * 3, g * 3 + 3);
+     const pos = mjModel.geom_pos.subarray(g * 3, g * 3 + 3);
+@@ -973,13 +1050,14 @@ var GeomBuilder = class {
+     let opacity = 1;
+     if (matId >= 0) {
+       const rgba = mjModel.mat_rgba.subarray(matId * 4, matId * 4 + 4);
+-      color.setRGB(rgba[0], rgba[1], rgba[2]);
++      color.setRGB(rgba[0], rgba[1], rgba[2], THREE11.SRGBColorSpace);
+       opacity = rgba[3];
+     } else {
+       const rgba = mjModel.geom_rgba.subarray(g * 4, g * 4 + 4);
+-      color.setRGB(rgba[0], rgba[1], rgba[2]);
++      color.setRGB(rgba[0], rgba[1], rgba[2], THREE11.SRGBColorSpace);
+       opacity = rgba[3];
+     }
++    if (opacity <= 0 && !map) return null;
+     const MG = this.mujoco.mjtGeom;
+     let geo = null;
+     const getVal = (v) => v?.value ?? v;
+@@ -997,18 +1075,7 @@ var GeomBuilder = class {
+       geo.rotateX(Math.PI / 2);
+     } else if (type === getVal(MG.mjGEOM_MESH)) {
+       const mId = mjModel.geom_dataid[g];
+-      const vAdr = mjModel.mesh_vertadr[mId];
+-      const vNum = mjModel.mesh_vertnum[mId];
+-      const fAdr = mjModel.mesh_faceadr[mId];
+-      const fNum = mjModel.mesh_facenum[mId];
+-      geo = new THREE11.BufferGeometry();
+-      geo.setAttribute("position", new THREE11.Float32BufferAttribute(mjModel.mesh_vert.subarray(vAdr * 3, (vAdr + vNum) * 3), 3));
+-      geo.setIndex(Array.from(mjModel.mesh_face.subarray(fAdr * 3, (fAdr + fNum) * 3)));
+-      const smoothingTolerance = this.getMeshNormalSmoothingTolerance();
+-      if (smoothingTolerance !== null) {
+-        geo = mergeVertices(geo, smoothingTolerance);
+-      }
+-      geo.computeVertexNormals();
++      geo = this.buildMeshGeometry(mjModel, mId);
+     }
+     if (geo) {
+       const isPlane = type === getVal(MG.mjGEOM_PLANE);
+diff --git a/node_modules/mujoco-react/src/rendering/GeomBuilder.ts b/node_modules/mujoco-react/src/rendering/GeomBuilder.ts
+index 6fe3619..06697ef 100644
+--- a/node_modules/mujoco-react/src/rendering/GeomBuilder.ts
++++ b/node_modules/mujoco-react/src/rendering/GeomBuilder.ts
+@@ -76,10 +76,14 @@ export class GeomBuilder {
+         }
+ 
+         const texture = new THREE.DataTexture(rgba, width, height, THREE.RGBAFormat);
+-        texture.colorSpace = THREE.LinearSRGBColorSpace;
++        // MuJoCo tex_data is already in OpenGL row order (row 0 = bottom). Do not flip again.
++        texture.colorSpace = THREE.SRGBColorSpace;
+         texture.wrapS = THREE.RepeatWrapping;
+         texture.wrapT = THREE.RepeatWrapping;
+-        texture.flipY = true;
++        texture.magFilter = THREE.LinearFilter;
++        texture.minFilter = THREE.LinearMipmapLinearFilter;
++        texture.generateMipmaps = true;
++        texture.flipY = false;
+         const repeatOffset = matId * 2;
+         const repeatS = mjModel.mat_texrepeat?.[repeatOffset] ?? 1;
+         const repeatT = mjModel.mat_texrepeat?.[repeatOffset + 1] ?? 1;
+@@ -89,14 +93,85 @@ export class GeomBuilder {
+         return texture;
+     }
+ 
++    private buildMeshGeometry(mjModel: MujocoModel, mId: number): THREE.BufferGeometry {
++        const vAdr = Number(mjModel.mesh_vertadr[mId]);
++        const vNum = Number(mjModel.mesh_vertnum[mId]);
++        const fAdr = Number(mjModel.mesh_faceadr[mId]);
++        const fNum = Number(mjModel.mesh_facenum[mId]);
++        const tAdr = Number(mjModel.mesh_texcoordadr[mId]);
++        const tNum = Number(mjModel.mesh_texcoordnum[mId]);
++
++        const verts = mjModel.mesh_vert;
++        const faces = mjModel.mesh_face;
++        const facetex = mjModel.mesh_facetexcoord;
++        const texcoords = mjModel.mesh_texcoord;
++        const hasUV = tNum > 0 && tAdr >= 0 && !!texcoords && !!facetex;
++
++        // mesh_faceadr is a per-face (row) address; the flat arrays store 3 ints/floats per face.
++        // Vertex indices in mesh_face and texcoord indices in mesh_facetexcoord are mesh-LOCAL.
++        const faceOffset = fAdr * 3;
++        const faceCount = fNum * 3;
++        const faceIndices = faces.subarray(faceOffset, faceOffset + faceCount);
++
++        const finalize = (geometry: THREE.BufferGeometry) => {
++            const smoothingTolerance = this.getMeshNormalSmoothingTolerance();
++            if (smoothingTolerance !== null && !geometry.getAttribute('uv')) {
++                const merged = mergeVertices(geometry, smoothingTolerance);
++                merged.computeVertexNormals();
++                return merged;
++            }
++            geometry.computeVertexNormals();
++            return geometry;
++        };
++
++        if (!hasUV) {
++            const geometry = new THREE.BufferGeometry();
++            const positionArray = new Float32Array(verts.subarray(vAdr * 3, (vAdr + vNum) * 3));
++            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positionArray, 3));
++            let maxFaceIdx = 0;
++            for (let i = 0; i < faceCount; i += 1) {
++                if (faceIndices[i] > maxFaceIdx) maxFaceIdx = faceIndices[i];
++            }
++            if (maxFaceIdx > 65535) {
++                geometry.setIndex(new THREE.Uint32BufferAttribute(faceIndices, 1));
++            } else {
++                geometry.setIndex(Array.from(faceIndices));
++            }
++            return finalize(geometry);
++        }
++
++        // Expand every corner so position/UV index streams stay aligned (required for
++        // meshes like banana where face indices exceed 65535, and for face!=facetex).
++        const positions = new Float32Array(fNum * 9);
++        const uvs = new Float32Array(fNum * 6);
++        let pi = 0;
++        let ui = 0;
++        for (let i = 0; i < faceCount; i += 1) {
++            const vi = faces[faceOffset + i];
++            const ti = facetex[faceOffset + i];
++            const vj = (vAdr + vi) * 3;
++            positions[pi++] = verts[vj];
++            positions[pi++] = verts[vj + 1];
++            positions[pi++] = verts[vj + 2];
++            const tj = (tAdr + ti) * 2;
++            uvs[ui++] = texcoords[tj];
++            uvs[ui++] = texcoords[tj + 1];
++        }
++
++        const geometry = new THREE.BufferGeometry();
++        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
++        geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
++        return finalize(geometry);
++    }
++
+     /**
+      * Creates a Three.js Object3D (usually a Mesh) for a specific geometry in the MuJoCo model.
+      * Returns null if the geometry shouldn't be rendered (e.g., invisible collision triggers).
+      */
+     create(mjModel: MujocoModel, g: number): THREE.Object3D | null {
+-        // 1. Check if this geom is meant to be visible
+-        // Group 3 in MuJoCo is conventionally used for invisible 'helper' geoms.
+-        if (mjModel.geom_group[g] === 3) return null;
++        const group = mjModel.geom_group[g];
++        // Match native MuJoCo viewer: hide collision (0) and invisible helper (3) groups.
++        if (group === 0 || group === 3) return null;
+ 
+         // 2. Read raw data from MuJoCo's WASM memory arrays
+         const type = mjModel.geom_type[g];
+@@ -114,15 +189,18 @@ export class GeomBuilder {
+         if (matId >= 0) {
+             // Use shared material
+             const rgba = mjModel.mat_rgba.subarray(matId * 4, matId * 4 + 4);
+-            color.setRGB(rgba[0], rgba[1], rgba[2]);
++            // MuJoCo colors are authored in sRGB; convert so lighting/output match the native viewer.
++            color.setRGB(rgba[0], rgba[1], rgba[2], THREE.SRGBColorSpace);
+             opacity = rgba[3];
+         } else {
+             // Use geom-specific color
+             const rgba = mjModel.geom_rgba.subarray(g * 4, g * 4 + 4);
+-            color.setRGB(rgba[0], rgba[1], rgba[2]);
++            color.setRGB(rgba[0], rgba[1], rgba[2], THREE.SRGBColorSpace);
+             opacity = rgba[3];
+         }
+ 
++        if (opacity <= 0 && !map) return null;
++
+         // 4. Build the Geometry based on type
+         const MG = this.mujoco.mjtGeom; // Short alias for MuJoCo Geometry Types enum
+         let geo: THREE.BufferGeometry | null = null;
+@@ -147,24 +225,8 @@ export class GeomBuilder {
+             geo = new THREE.CylinderGeometry(size[0], size[0], size[1] * 2, 24);
+             geo.rotateX(Math.PI / 2);
+         } else if (type === getVal(MG.mjGEOM_MESH)) {
+-            // Arbitrary 3D meshes (like the robot parts).
+-            // We must read the vertex and face data directly from MuJoCo's buffers.
+             const mId = mjModel.geom_dataid[g];
+-            const vAdr = mjModel.mesh_vertadr[mId];
+-            const vNum = mjModel.mesh_vertnum[mId];
+-            const fAdr = mjModel.mesh_faceadr[mId];
+-            const fNum = mjModel.mesh_facenum[mId];
+-
+-            geo = new THREE.BufferGeometry();
+-            // 'position' attribute = vertices
+-            geo.setAttribute('position', new THREE.Float32BufferAttribute(mjModel.mesh_vert.subarray(vAdr * 3, (vAdr + vNum) * 3), 3));
+-            // 'index' = faces (triangles connecting vertices)
+-            geo.setIndex(Array.from(mjModel.mesh_face.subarray(fAdr * 3, (fAdr + fNum) * 3)));
+-            const smoothingTolerance = this.getMeshNormalSmoothingTolerance();
+-            if (smoothingTolerance !== null) {
+-                geo = mergeVertices(geo, smoothingTolerance);
+-            }
+-            geo.computeVertexNormals(); // Auto-calculate smooth lighting normals
++            geo = this.buildMeshGeometry(mjModel, mId);
+         }
+ 
+         // 5. Construct the final Mesh

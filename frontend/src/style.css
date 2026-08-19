@@ -1,0 +1,2474 @@
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+  background: #181a1d;
+  color: #f4f7fb;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+canvas {
+  display: block;
+}
+
+.scene-launcher {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  padding: 24px;
+  box-sizing: border-box;
+  background: #111316;
+}
+
+.scene-launcher-panel {
+  display: grid;
+  width: min(860px, 100%);
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: #161b1a;
+  box-shadow: 0 18px 70px rgba(0, 0, 0, 0.28);
+}
+
+.scene-launcher-nav,
+.scene-status-nav {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.scene-launcher-nav a,
+.scene-status-nav a {
+  color: #8fe2a7;
+  font: 12px/1.2 Inter, ui-sans-serif, system-ui, sans-serif;
+  text-decoration: none;
+}
+
+.scene-launcher-nav a:hover,
+.scene-status-nav a:hover {
+  text-decoration: underline;
+}
+
+.scene-shell {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  grid-template-columns: minmax(0, 1fr);
+  background: #111316;
+}
+
+/* --- clean scene page (v2): 3-zone shell -------------------------------- */
+.scene-shell-v2 {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: #111316;
+}
+
+.scene-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 24vw);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-rail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  background: #0f1412;
+  color: #e8eef0;
+}
+
+.chat-rail-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 10px 12px;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.chat-rail-status {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(232, 238, 240, 0.5);
+}
+
+.chat-rail-body {
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-rail-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: rgba(232, 238, 240, 0.55);
+}
+
+.chat-rail-message {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.chat-rail-message strong {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(232, 238, 240, 0.45);
+  margin-bottom: 2px;
+}
+
+.chat-rail-message p {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  white-space: pre-wrap;
+}
+
+.chat-rail-message.is-user p {
+  background: rgba(94, 176, 138, 0.16);
+}
+
+/* Assistant output flows as plain text (no bubble), Claude-Code style. */
+.chat-assistant {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(232, 238, 240, 0.74);
+  padding: 2px 2px 2px 0;
+}
+
+.chat-assistant.is-working {
+  color: rgba(232, 238, 240, 0.55);
+}
+
+.chat-assistant.is-error {
+  color: #f6a4a4;
+}
+
+.chat-assistant-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.chat-assistant-text {
+  white-space: pre-wrap;
+}
+
+/* Phase 4: collapsible process trail (default collapsed). */
+.chat-steps-wrap {
+  padding-left: 13px;
+}
+
+.chat-steps-toggle {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(232, 238, 240, 0.4);
+  cursor: pointer;
+}
+
+.chat-steps-toggle:hover {
+  color: rgba(232, 238, 240, 0.65);
+}
+
+.chat-steps {
+  margin: 4px 0 0;
+  padding: 0 0 0 12px;
+  list-style: disc;
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgba(232, 238, 240, 0.45);
+}
+
+.chat-steps li {
+  margin: 2px 0;
+}
+
+/* Inline [[ref:NAME]] chips inside assistant message text — reuses .ref-token,
+ * distinguishing facilities with a subtly different accent than objects. */
+.message-ref-chip {
+  font-size: 12px;
+}
+
+.ref-token.message-ref-chip.is-facility {
+  border-color: rgba(224, 179, 65, 0.6);
+  background: rgba(224, 179, 65, 0.18);
+  color: #fff6df;
+}
+
+.think-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: #5eb08a;
+  animation: think-pulse 1s ease-in-out infinite;
+}
+
+@keyframes think-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .think-dot {
+    animation: none;
+    opacity: 0.8;
+  }
+}
+
+.chat-rail-error {
+  margin: 0;
+  font-size: 12px;
+  color: #f6a4a4;
+}
+
+.chat-rail-composer {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px;
+}
+
+/* --- rich composer (contentEditable + inline ref tokens) --------------- */
+/* Claude-style single input box: bordered container wraps the editable region
+   and a bottom-right action row (pin "+" and send). */
+.composer-box {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 8px 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  background: #0b0f0d;
+}
+
+.composer-box:focus-within {
+  border-color: rgba(94, 176, 138, 0.6);
+}
+
+.composer-box.is-picking {
+  border-color: rgba(224, 179, 65, 0.7);
+}
+
+.ref-composer {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 38px;
+  max-height: 160px;
+  overflow-y: auto;
+  color: #e8eef0;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: text;
+}
+
+.ref-composer:focus {
+  outline: none;
+}
+
+.ref-composer.is-empty::before {
+  content: attr(data-placeholder);
+  color: rgba(232, 238, 240, 0.4);
+  pointer-events: none;
+}
+
+.ref-composer[contenteditable="false"] {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Inline reference token: an atomic pill inside the editable text. */
+.ref-token {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  margin: 0 1px;
+  border: 1px solid rgba(94, 176, 138, 0.5);
+  border-radius: 5px;
+  background: rgba(94, 176, 138, 0.16);
+  color: #eafff4;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ref-token.is-position {
+  border-color: rgba(224, 179, 65, 0.6);
+  background: rgba(224, 179, 65, 0.18);
+  color: #fff6df;
+  font-variant-numeric: tabular-nums;
+}
+
+.ref-token.is-plan_task {
+  border-color: rgba(94, 176, 138, 0.72);
+  background: rgba(94, 176, 138, 0.18);
+  color: #d9f5e5;
+}
+
+.ref-token:hover {
+  filter: brightness(1.15);
+}
+
+/* Sent references retain the composer's chip appearance but are display-only. */
+.ref-token.message-ref-token {
+  cursor: default;
+  pointer-events: none;
+}
+
+.ref-token.message-ref-token:hover {
+  filter: none;
+}
+
+/* Bottom-right icon actions inside the composer box. */
+.composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.composer-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  line-height: 1;
+}
+
+/* Plan-task reference toggle. */
+.composer-icon-btn.plan-ref {
+  background: rgba(255, 255, 255, 0.08);
+  color: #cfe6da;
+  font-size: 19px;
+}
+
+.composer-icon-btn.plan-ref:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.composer-icon-btn.plan-ref.is-active {
+  background: rgba(94, 176, 138, 0.25);
+  color: #d9f5e5;
+  box-shadow: inset 0 0 0 1px rgba(94, 176, 138, 0.75);
+}
+
+/* Scene pin-reference toggle. */
+.composer-icon-btn.pin {
+  background: rgba(255, 255, 255, 0.08);
+  color: #cfe6da;
+  font-size: 19px;
+}
+
+.composer-icon-btn.pin:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.composer-icon-btn.pin.is-active {
+  background: rgba(224, 179, 65, 0.22);
+  color: #ffdf9e;
+  box-shadow: inset 0 0 0 1px rgba(224, 179, 65, 0.7);
+}
+
+/* enter/return send */
+.composer-icon-btn.send {
+  background: #5eb08a;
+  color: #04120b;
+}
+
+.composer-icon-btn.send:hover {
+  background: #6cc79b;
+}
+
+.composer-icon-btn.send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* --- Gantt panel -------------------------------------------------------- */
+.gantt-panel {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  background: #0f1412;
+  color: #e8eef0;
+  padding: 8px 12px 10px;
+}
+
+.gantt-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.gantt-title {
+  font-weight: 600;
+}
+
+.gantt-spacer {
+  flex: 1;
+}
+
+.gantt-status {
+  font-size: 11px;
+  color: rgba(232, 238, 240, 0.5);
+}
+
+.gantt-warn-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.gantt-warn-badge {
+  font: inherit;
+  font-size: 11px;
+  color: #f2b45c;
+  background: rgba(242, 180, 92, 0.14);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+
+.gantt-warn-badge:hover,
+.gantt-warn-badge.is-open {
+  background: rgba(242, 180, 92, 0.24);
+  border-color: rgba(242, 180, 92, 0.4);
+}
+
+.gantt-warn-popover {
+  position: absolute;
+  /* The Gantt docks at the bottom of the page, so downward would run off the
+     viewport; open upward over the 3D scene instead. */
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  min-width: 260px;
+  max-width: 420px;
+  max-height: 40vh;
+  overflow-y: auto;
+  background: rgba(20, 24, 28, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  padding: 6px;
+}
+
+.gantt-warn-row {
+  font-size: 11px;
+  color: #f2b45c;
+  padding: 5px 8px;
+  border-radius: 5px;
+  white-space: pre-wrap;
+}
+
+.gantt-warn-row.is-clickable {
+  cursor: pointer;
+}
+
+.gantt-warn-row.is-clickable:hover {
+  background: rgba(242, 180, 92, 0.16);
+}
+
+.gantt-warn-group-heading {
+  margin-top: 4px;
+  padding: 4px 8px 2px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: rgba(232, 238, 240, 0.4);
+}
+
+.gantt-icon-btn {
+  min-width: 28px;
+  min-height: 26px;
+  padding: 0 8px;
+  font: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(20, 24, 28, 0.96);
+  color: #f4f7fb;
+  cursor: pointer;
+}
+
+.gantt-icon-btn:hover:not(:disabled) {
+  background: rgba(38, 49, 45, 0.96);
+}
+
+.gantt-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.gantt-icon-btn.subtitle-toggle.is-active {
+  border-color: rgba(37, 99, 235, 0.8);
+  background: rgba(37, 99, 235, 0.9);
+  color: #fff;
+}
+
+.gantt-version-select {
+  min-height: 26px;
+  max-width: 210px;
+  padding: 0 24px 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(20, 24, 28, 0.96);
+  color: #f4f7fb;
+  font: inherit;
+  cursor: pointer;
+}
+
+.gantt-version-select:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.gantt-speed {
+  min-height: 26px;
+  padding: 0 6px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(20, 24, 28, 0.96);
+  color: #f4f7fb;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.gantt-speed:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.gantt-body {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.gantt-labels {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gantt-lane-label {
+  --robot-color: #a3e635;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: 700 13px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  color: rgba(232, 238, 240, 0.86);
+  white-space: nowrap;
+}
+
+.gantt-lane-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--robot-color);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--robot-color) 70%, transparent);
+}
+
+.gantt-ruler-label {
+  height: 30px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding-top: 5px;
+  font-size: 10px;
+  color: rgba(232, 238, 240, 0.36);
+}
+
+.gantt-tracks {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gantt-track {
+  position: relative;
+  height: 30px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+}
+
+.gantt-track.is-drop-target {
+  background: rgba(55, 138, 221, 0.11);
+  box-shadow: inset 0 0 0 1px rgba(124, 192, 255, 0.38);
+}
+
+.gantt-marker-row {
+  position: relative;
+  height: 12px;
+}
+
+/* One marker = one conflict window rendered as a highlighted interval; its
+   left edge is exactly where a click seeks to, so playhead and marker align. */
+.gantt-conflict-marker {
+  position: absolute;
+  top: 0;
+  height: 12px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: hidden;
+  border: 1px solid rgba(242, 180, 92, 0.5);
+  border-radius: 4px;
+  background: rgba(242, 180, 92, 0.22);
+  color: #f2b45c;
+  font-size: 10px;
+  line-height: 1;
+  padding: 0 3px;
+  cursor: pointer;
+}
+
+.gantt-conflict-marker:hover {
+  background: rgba(242, 180, 92, 0.38);
+}
+
+.gantt-ruler {
+  position: relative;
+  height: 30px;
+  border-top: 1px solid rgba(232, 238, 240, 0.3);
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+  outline: none;
+}
+
+.gantt-ruler:hover:not(.is-disabled),
+.gantt-ruler:focus-visible {
+  border-top-color: rgba(124, 192, 255, 0.9);
+}
+
+.gantt-ruler.is-scrubbing {
+  cursor: grabbing;
+}
+
+.gantt-ruler.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.gantt-ruler-tick {
+  position: absolute;
+  top: -1px;
+  height: 100%;
+  pointer-events: none;
+}
+
+.gantt-ruler-mark {
+  display: block;
+  width: 1px;
+  height: 7px;
+  background: rgba(232, 238, 240, 0.38);
+}
+
+.gantt-ruler-text {
+  position: absolute;
+  top: 9px;
+  left: 0;
+  transform: translateX(-50%);
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+  color: rgba(232, 238, 240, 0.55);
+}
+
+.gantt-ruler-tick.is-first .gantt-ruler-text {
+  transform: none;
+}
+
+.gantt-ruler-tick.is-last .gantt-ruler-text {
+  transform: translateX(-100%);
+}
+
+.gantt-bar-frame {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  min-width: 34px;
+}
+
+.gantt-insert-caret {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 3px;
+  z-index: 7;
+  pointer-events: none;
+  background: #7cc0ff;
+  border-radius: 2px;
+  transform: translateX(-1px);
+  box-shadow: 0 0 6px rgba(124, 192, 255, 0.75);
+}
+
+/* Shift-drag `after` drop marker. Deliberately unlike the blue insert caret:
+   the two gestures have different consequences (dependency vs reassignment),
+   so they must not look like the same drop. Shares the teal of the pending
+   dependency outlines, so the drop preview and its result read as one thing. */
+.gantt-after-caret {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 3px;
+  z-index: 7;
+  pointer-events: none;
+  background: #34d399;
+  border-radius: 2px;
+  transform: translateX(-1px);
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.75);
+}
+
+.gantt-after-caret::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  border: 5px solid transparent;
+  border-left-color: #34d399;
+  transform: translateY(-50%);
+}
+
+/* `inset: 0` alone sizes this to its frame. An explicit `width: 100%` used to
+   be here too, which over-constrains the box and, worse, resolved differently
+   per element type: real bars are <button> and inherit the UA stylesheet's
+   border-box, while the origin ghost is a <span> on content-box, so its
+   `width: 100%` gained the 16px padding and 2px border and hung 18px past its
+   own frame into the next bar. box-sizing is pinned as well so no future
+   element swap can reintroduce that asymmetry. */
+.gantt-bar {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border: 1px solid rgba(80, 160, 230, 0.5);
+  background: rgba(55, 138, 221, 0.28);
+  border-radius: 4px;
+  padding: 0 8px;
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.gantt-bar-frame.has-remove .gantt-bar {
+  padding-right: 24px;
+  padding-left: 24px;
+}
+
+.gantt-bar.is-support {
+  border-color: rgba(184, 126, 232, 0.64);
+  background: rgba(137, 82, 190, 0.32);
+}
+
+.gantt-bar-frame.is-pending-removal .gantt-bar {
+  border-style: dashed;
+  opacity: 0.48;
+  cursor: default;
+}
+
+.gantt-bar-frame.is-drag-origin {
+  pointer-events: none;
+  z-index: 0;
+}
+
+.gantt-bar-frame:not(.is-drag-origin) {
+  z-index: 1;
+}
+
+.gantt-bar-frame.is-drag-origin .gantt-bar {
+  border-style: dashed;
+  background: transparent;
+  opacity: 0.38;
+  cursor: default;
+}
+
+.gantt-draft-ruler-text {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.gantt-bar-remove {
+  position: absolute;
+  z-index: 6;
+  top: 50%;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 3px;
+  background: rgba(10, 18, 24, 0.58);
+  color: rgba(232, 238, 240, 0.78);
+  font: 15px/18px system-ui, sans-serif;
+  text-align: center;
+  cursor: pointer;
+}
+
+.gantt-bar-remove:hover,
+.gantt-bar-remove:focus-visible {
+  background: rgba(168, 66, 66, 0.82);
+  color: #fff;
+  outline: none;
+}
+
+.gantt-bar-frame.is-pending-removal .gantt-bar-remove:hover,
+.gantt-bar-frame.is-pending-removal .gantt-bar-remove:focus-visible {
+  background: rgba(55, 138, 221, 0.82);
+}
+
+/* Temporarily disabled: with the conflict-window marker strips on the
+   timeline, tinting the task/step bars too reads as visual noise. Re-enable
+   (or delete for good) after evaluating the marker-only look.
+.gantt-bar.is-warned {
+  border-color: rgba(242, 180, 92, 0.6);
+  background: rgba(242, 180, 92, 0.22);
+}
+*/
+
+.gantt-bar.is-estimated {
+  border-style: dashed;
+  background: rgba(55, 138, 221, 0.18);
+}
+
+.gantt-bar.is-support.is-estimated {
+  background: rgba(137, 82, 190, 0.2);
+}
+
+.gantt-bar.is-selected {
+  outline: 2px solid #7cc0ff;
+  outline-offset: 0;
+}
+
+.gantt-bar.is-dragging {
+  opacity: 0.85;
+  cursor: grabbing;
+  z-index: 5;
+}
+
+.gantt-bar.is-snap-target {
+  outline: 2px dashed #7cc0ff;
+  outline-offset: 1px;
+}
+
+/* Unsynced `after` dependency. The waiting task has already been shifted so its
+   left edge meets the anchor's right edge; these outlines say which two bars the
+   shift came from. Teal is unclaimed elsewhere in the Gantt (blue = selection
+   and snap, amber = conflicts, purple = support tasks), and both are solid
+   because dashed already means ghost, estimated, and pending removal. The
+   anchor is the fainter of the two: it did not move. */
+.gantt-bar.is-after-waiter {
+  outline: 2px solid #34d399;
+  outline-offset: 1px;
+}
+
+.gantt-bar.is-after-anchor {
+  outline: 2px solid rgba(52, 211, 153, 0.5);
+  outline-offset: 1px;
+}
+
+.gantt-btn-primary {
+  min-height: 26px;
+  padding: 0 12px;
+  font: inherit;
+  border: 1px solid #4a86c9;
+  border-radius: 6px;
+  background: #2f6bb0;
+  color: #f4f7fb;
+  cursor: pointer;
+}
+
+.gantt-btn-primary:hover {
+  background: #397bc8;
+}
+
+.gantt-bar-label {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  color: #e8eef0;
+  white-space: nowrap;
+}
+
+.gantt-playhead {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: #f4f7fb;
+  pointer-events: none;
+  z-index: 8;
+  transform: translateX(-1px);
+  box-shadow: 0 0 0 1px rgba(15, 20, 18, 0.35);
+}
+
+.gantt-playhead::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f4f7fb;
+  transform: translate(-50%, 50%);
+}
+
+.scene-reset-button,
+.scene-explore-button {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  width: 120px;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(12, 14, 16, 0.84);
+  color: #f4f7fb;
+  cursor: pointer;
+  font: 13px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.plan-task-subtitles {
+  position: absolute;
+  top: 16px;
+  left: 18px;
+  z-index: 10;
+  display: grid;
+  gap: 7px;
+  min-width: 260px;
+  max-width: min(520px, calc(100% - 180px));
+  padding: 10px 13px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(10, 14, 18, 0.78);
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.22);
+  color: #f7fafc;
+  pointer-events: none;
+  backdrop-filter: blur(5px);
+}
+
+.plan-task-subtitle-row {
+  display: grid;
+  grid-template-columns: 9px 66px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font: 600 14px/1.35 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.plan-task-subtitle-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2563eb;
+  box-shadow: 0 0 7px rgba(37, 99, 235, 0.75);
+}
+
+.plan-task-subtitle-dot.robot-1 {
+  background: #f472b6;
+  box-shadow: 0 0 7px rgba(244, 114, 182, 0.75);
+}
+
+.plan-task-subtitle-name {
+  white-space: nowrap;
+}
+
+.plan-task-subtitle-task {
+  overflow: hidden;
+  color: #e5e7eb;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-explore-button {
+  top: 54px;
+}
+
+.scene-explore-button.is-active {
+  border-color: rgba(37, 99, 235, 0.8);
+  background: rgba(37, 99, 235, 0.9);
+}
+
+.scene-reset-button:hover:not(:disabled),
+.scene-explore-button:hover:not(:disabled) {
+  background: rgba(38, 49, 45, 0.96);
+}
+
+.scene-explore-button.is-active:hover:not(:disabled) {
+  background: rgba(29, 78, 216, 0.96);
+}
+
+.scene-reset-button:disabled,
+.scene-explore-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.scene-status-panel {
+  max-width: min(420px, calc(100vw - 24px));
+}
+
+.scene-launcher-panel h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+}
+
+.scene-launcher-panel p {
+  margin: 6px 0 0;
+  color: #b9c7c0;
+}
+
+.scene-launcher-panel label {
+  color: #d8e1dc;
+  font-size: 13px;
+}
+
+.scene-launcher-row {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) auto;
+  gap: 8px;
+}
+
+.scene-launcher-row input,
+.scene-launcher-row button {
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(20, 24, 28, 0.96);
+  color: #f4f7fb;
+  font: 13px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.scene-launcher-row input {
+  padding: 0 10px;
+}
+
+.scene-launcher-row button {
+  padding: 0 14px;
+  cursor: pointer;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.scene-launcher-row button:hover {
+  background: #26312d;
+}
+
+.scene-launcher-status,
+.scene-launcher-meta {
+  color: #b9c7c0;
+  font: 13px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.app-shell {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 33vw);
+  background: #111316;
+}
+
+.viewer-pane {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+.robot-identity-label {
+  --robot-color: #a3e635;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--robot-color) 78%, white);
+  border-radius: 999px;
+  background: rgba(10, 14, 18, 0.88);
+  box-shadow:
+    0 5px 16px rgba(0, 0, 0, 0.34),
+    0 0 14px color-mix(in srgb, var(--robot-color) 28%, transparent);
+  color: #f7fafc;
+  font: 700 12px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.robot-identity-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--robot-color);
+  box-shadow: 0 0 8px var(--robot-color);
+}
+
+.scene-entity-label {
+  padding: 3px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 999px;
+  background: rgba(10, 14, 18, 0.84);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+  color: #f7fafc;
+  font: 650 9px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0.015em;
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+}
+
+.scene-entity-label.is-facility {
+  border-color: rgba(250, 204, 21, 0.72);
+  color: #fef3c7;
+}
+
+.status-panel {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+  max-width: min(720px, calc(100vw - 24px));
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(12, 14, 16, 0.84);
+  color: #f4f7fb;
+  font: 13px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.status-panel pre {
+  max-width: 100%;
+  margin: 8px 0 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: #ffb4a8;
+}
+
+.debug-panel-toggle {
+  float: right;
+  min-height: 26px;
+  margin-left: 10px;
+  padding: 0 9px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 5px;
+  background: rgba(20, 24, 28, 0.96);
+  color: #f4f7fb;
+  cursor: pointer;
+  font: 11px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.status-panel.is-collapsed {
+  width: auto;
+  padding: 6px;
+  background: rgba(12, 14, 16, 0.72);
+}
+
+.status-panel.is-collapsed > :not(.debug-panel-toggle) {
+  display: none;
+}
+
+.standoff-export {
+  max-height: 150px;
+  padding: 7px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.32);
+  color: #d8e8df !important;
+}
+
+.scene-controls {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+.scene-controls label {
+  color: #b9c7c0;
+}
+
+.camera-export-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.camera-export-row button {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(28, 34, 31, 0.92);
+  color: #f4f7fb;
+  cursor: pointer;
+  font: inherit;
+}
+
+.camera-export-row button:hover:not(:disabled) {
+  background: rgba(38, 49, 45, 0.96);
+}
+
+.camera-export-row button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.camera-export-row span {
+  min-width: 0;
+  overflow: hidden;
+  color: #b9c7c0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.camera-export-preview {
+  max-height: 180px;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.32);
+  color: #d8e8df;
+}
+
+.scene-open-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  gap: 6px;
+}
+
+.scene-open-row input,
+.scene-open-row button {
+  min-width: 0;
+  min-height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(20, 24, 28, 0.96);
+  color: #f4f7fb;
+  font: 12px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.scene-open-row input {
+  padding: 0 8px;
+}
+
+.scene-open-row button {
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.scene-open-row button:hover {
+  background: rgba(38, 49, 45, 0.96);
+}
+
+.status-panel ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.debug-pin-panel {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid rgba(224, 179, 65, 0.34);
+  border-radius: 6px;
+  background: rgba(30, 25, 13, 0.58);
+}
+
+.debug-pin-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.debug-pin-head strong {
+  margin-right: auto;
+}
+
+.debug-pin-head button,
+.debug-pin-row button {
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 5px;
+  background: rgba(20, 24, 28, 0.96);
+  color: #f4f7fb;
+  cursor: pointer;
+}
+
+.debug-pin-head button.is-active {
+  border-color: rgba(224, 179, 65, 0.9);
+  background: rgba(224, 179, 65, 0.22);
+  color: #fff3c4;
+}
+
+.debug-pin-head button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.debug-pin-status {
+  color: #d8c99a;
+  font-size: 11px;
+}
+
+.debug-pin-list {
+  display: grid;
+  gap: 4px;
+  max-height: 150px;
+  overflow: auto;
+}
+
+.debug-pin-row {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) minmax(235px, auto) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.debug-pin-row > code:first-child {
+  color: #e0b341;
+  font-weight: 700;
+}
+
+.debug-pin-entity {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.debug-pin-row button {
+  min-height: 22px;
+  padding: 0 7px;
+}
+
+.trajectory-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1fr) auto auto;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.trajectory-controls select,
+.trajectory-controls input,
+.trajectory-controls button {
+  min-width: 0;
+  min-height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(20, 24, 28, 0.96);
+  color: #f4f7fb;
+  font: 12px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.trajectory-controls select,
+.trajectory-controls input {
+  padding: 0 8px;
+}
+
+.trajectory-controls button {
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.trajectory-controls button:hover {
+  background: rgba(38, 49, 45, 0.96);
+}
+
+/* Skill row reuses .trajectory-controls child styling but has its own columns:
+   robot select | skill select (grows) | Play | Clear | Refresh. */
+.skill-controls {
+  grid-template-columns: auto minmax(180px, 1fr) auto auto auto;
+}
+
+.skill-controls button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.timeline-panel {
+  margin-top: 10px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(16, 20, 24, 0.6);
+}
+
+.timeline-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.compile-status {
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.compile-warnings {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #f2b45c;
+}
+
+.timeline-head button {
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(20, 24, 28, 0.96);
+  color: #f4f7fb;
+  font: 12px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  cursor: pointer;
+}
+
+.timeline-head button:hover:not(:disabled) {
+  background: rgba(38, 49, 45, 0.96);
+}
+
+.timeline-head button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.timeline-clock {
+  margin-left: auto;
+  color: #9fb0c0;
+  font: 12px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.timeline-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.timeline-label {
+  color: #9fb0c0;
+  font: 12px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.timeline-lane {
+  position: relative;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  background: rgba(10, 13, 16, 0.7);
+  overflow: hidden;
+}
+
+.timeline-chip {
+  position: absolute;
+  top: 3px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px 0 8px;
+  border-radius: 5px;
+  background: rgba(34, 197, 94, 0.28);
+  border: 1px solid rgba(34, 197, 94, 0.6);
+  color: #eaf6ee;
+  font: 11px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.timeline-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timeline-chip-x {
+  border: none;
+  background: transparent;
+  color: #cfe9d8;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.timeline-chip-x:hover {
+  color: #fff;
+}
+
+.timeline-playhead {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: #f4d35e;
+  pointer-events: none;
+}
+
+.timeline-row select {
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(20, 24, 28, 0.96);
+  color: #f4f7fb;
+  font: 12px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.terminal-panel {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+  background: #0f1412;
+}
+
+.right-workspace {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+  background: #0f1412;
+}
+
+.right-workspace-grounding {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.right-workspace.is-resizing {
+  cursor: row-resize;
+  user-select: none;
+}
+
+.right-workspace > .terminal-panel {
+  border-left: 0;
+}
+
+.right-workspace-divider {
+  position: relative;
+  z-index: 3;
+  cursor: row-resize;
+  background: #202824;
+  border-block: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.right-workspace-divider::after {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  width: 42px;
+  height: 2px;
+  border-radius: 999px;
+  background: #718078;
+  content: "";
+  transform: translateX(-50%);
+}
+
+.right-workspace-divider:focus-visible {
+  outline: 2px solid #55c879;
+  outline-offset: -2px;
+}
+
+.authoring-workspace {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: #111714;
+}
+
+.authoring-workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  background: #151b18;
+}
+
+.authoring-workspace-header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.authoring-workspace-header span,
+.authoring-help,
+.authoring-count,
+.authoring-task-group header span,
+.authoring-phase-message p {
+  color: #95a39c;
+  font-size: 12px;
+}
+
+.authoring-workspace-body {
+  min-width: 0;
+  min-height: 0;
+  padding: 14px;
+  overflow: auto;
+}
+
+.authoring-workspace h2,
+.authoring-workspace p {
+  margin: 0;
+}
+
+.authoring-workspace h2 {
+  margin-top: 3px;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.authoring-eyebrow {
+  color: #7ed99a;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.authoring-section-heading,
+.authoring-intent-compact,
+.authoring-actions,
+.authoring-task-group header,
+.authoring-undo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.authoring-intent-review,
+.authoring-plan-review,
+.authoring-phase-message {
+  display: grid;
+  gap: 14px;
+}
+
+.authoring-clarifying,
+.authoring-chat {
+  display: grid;
+  gap: 12px;
+}
+
+.authoring-chat {
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.authoring-chat-messages {
+  display: grid;
+  max-height: 220px;
+  gap: 8px;
+  overflow: auto;
+}
+
+.authoring-chat-empty,
+.authoring-ground-reason {
+  color: #95a39c;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.authoring-chat-message {
+  max-width: 88%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #1b2420;
+}
+
+.authoring-chat-message.is-user {
+  justify-self: end;
+  background: #223a2d;
+}
+
+.authoring-chat-message strong {
+  color: #8fe2a7;
+  font-size: 11px;
+}
+
+.authoring-chat-message p {
+  margin-top: 3px;
+  color: #e2e9e5;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.authoring-chat-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.authoring-chat-composer textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 58px;
+  padding: 9px 10px;
+  border: 1px solid rgba(126, 217, 154, 0.3);
+  border-radius: 7px;
+  background: rgba(20, 24, 28, 0.96);
+  color: #f4f7fb;
+  font: inherit;
+  resize: vertical;
+}
+
+.authoring-ground-error {
+  color: #ffb4a8;
+  font-size: 12px;
+}
+
+.authoring-intent-summary {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid rgba(126, 217, 154, 0.3);
+  border-radius: 8px;
+  background: rgba(34, 58, 45, 0.5);
+  color: #f4f7fb;
+  font: inherit;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.authoring-status,
+.authoring-strategy-title > span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(85, 200, 121, 0.16);
+  color: #8fe2a7;
+  font-size: 11px;
+}
+
+.authoring-actions {
+  justify-content: flex-end;
+}
+
+.authoring-workspace button,
+.authoring-workspace select {
+  min-height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background: #202824;
+  color: #f4f7fb;
+  cursor: pointer;
+  font: inherit;
+}
+
+.authoring-workspace button {
+  padding: 0 10px;
+}
+
+.authoring-workspace button:hover,
+.authoring-workspace select:hover {
+  background: #2a352f;
+}
+
+.authoring-workspace button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.authoring-workspace .authoring-primary {
+  border-color: #55c879;
+  background: #2d7042;
+}
+
+.authoring-intent-compact {
+  align-items: flex-start;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.authoring-intent-compact p {
+  margin-top: 4px;
+  color: #c4d0ca;
+  line-height: 1.4;
+}
+
+.authoring-strategy-section,
+.authoring-tasks-section {
+  display: grid;
+  gap: 9px;
+}
+
+.authoring-strategies {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.authoring-workspace .authoring-strategy {
+  display: grid;
+  height: auto;
+  gap: 5px;
+  padding: 10px;
+  text-align: left;
+}
+
+.authoring-workspace .authoring-strategy[aria-pressed="true"] {
+  border-color: #55c879;
+  background: #223a2d;
+}
+
+.authoring-strategy-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-weight: 650;
+}
+
+.authoring-strategy small {
+  color: #95a39c;
+  line-height: 1.35;
+}
+
+.authoring-task-groups {
+  display: grid;
+  gap: 10px;
+}
+
+.authoring-task-group {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+}
+
+.authoring-task-group header {
+  padding: 8px 10px;
+  background: #18201c;
+}
+
+.authoring-task {
+  display: grid;
+  grid-template-columns: minmax(72px, 0.8fr) minmax(105px, 1fr) minmax(88px, auto) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.authoring-task-goal {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #aab8b0;
+  font-size: 12px;
+}
+
+.authoring-task select {
+  width: 100%;
+  padding: 0 7px;
+}
+
+.authoring-workspace .authoring-delete {
+  color: #ffb4a8;
+}
+
+.authoring-target-editor {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid #55c879;
+  border-radius: 8px;
+  background: #1a2b22;
+}
+
+.authoring-target-editor p {
+  margin-top: 4px;
+  color: #b9c7c0;
+  font-size: 12px;
+}
+
+.authoring-undo {
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: #202824;
+}
+
+.authoring-confirmed {
+  align-content: center;
+  min-height: 180px;
+  text-align: center;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  background: #151a18;
+}
+
+.terminal-header > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.terminal-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #8f9a94;
+}
+
+.terminal-dot.is-connected {
+  background: #55c879;
+  box-shadow: 0 0 12px rgba(85, 200, 121, 0.55);
+}
+
+.terminal-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.terminal-actions button {
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: #26312d;
+  color: #f4f7fb;
+  cursor: pointer;
+  font: 13px/1 ui-sans-serif, system-ui, sans-serif;
+}
+
+.terminal-actions button {
+  padding: 0 10px;
+}
+
+.terminal-actions button:hover {
+  background: #324039;
+}
+
+.terminal-actions button:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+.terminal-actions button:disabled:hover {
+  background: #26312d;
+}
+
+.terminal-xterm-frame {
+  min-width: 0;
+  min-height: 0;
+  padding: 12px;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: #0b0f0e;
+}
+
+.terminal-xterm {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.terminal-xterm .xterm {
+  width: 100%;
+  height: 100%;
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 58vh) minmax(320px, 42vh);
+  }
+
+  .terminal-panel {
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
+    border-left: 0;
+  }
+
+  .right-workspace {
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
+    border-left: 0;
+  }
+
+  .right-workspace > .terminal-panel {
+    border-top: 0;
+  }
+}
+
+@media (max-width: 540px) {
+  .authoring-strategies {
+    grid-template-columns: 1fr;
+  }
+
+  .authoring-task {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* --- paper-friendly light theme ----------------------------------------
+   Selected at startup with VITE_UI_THEME=light. Semantic colors (robots,
+   tasks, dependencies, warnings, and selections) remain distinct; these
+   rules replace the dark neutral surfaces and their inverse text colors. */
+html[data-ui-theme="light"] {
+  color-scheme: light;
+  --ui-page: #f3f6f4;
+  --ui-panel: #ffffff;
+  --ui-panel-subtle: #f7f9f8;
+  --ui-control: #ffffff;
+  --ui-control-hover: #edf3ef;
+  --ui-border: #d5ddd8;
+  --ui-border-strong: #bdc9c2;
+  --ui-text: #202a25;
+  --ui-text-soft: #526159;
+  --ui-text-muted: #748078;
+  --ui-accent: #2f7d57;
+  --ui-accent-soft: #e3f1e9;
+  --ui-shadow: rgba(29, 45, 36, 0.13);
+}
+
+html[data-ui-theme="light"] body {
+  background: var(--ui-page);
+  color: var(--ui-text);
+}
+
+html[data-ui-theme="light"] .scene-launcher,
+html[data-ui-theme="light"] .scene-shell,
+html[data-ui-theme="light"] .scene-shell-v2,
+html[data-ui-theme="light"] .app-shell {
+  background: var(--ui-page);
+}
+
+html[data-ui-theme="light"] .scene-launcher-panel,
+html[data-ui-theme="light"] .chat-rail,
+html[data-ui-theme="light"] .gantt-panel,
+html[data-ui-theme="light"] .right-workspace,
+html[data-ui-theme="light"] .terminal-panel,
+html[data-ui-theme="light"] .authoring-workspace {
+  background: var(--ui-panel);
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+}
+
+html[data-ui-theme="light"] .scene-launcher-panel {
+  box-shadow: 0 18px 54px var(--ui-shadow);
+}
+
+html[data-ui-theme="light"] .chat-rail-head,
+html[data-ui-theme="light"] .gantt-panel,
+html[data-ui-theme="light"] .authoring-workspace-header,
+html[data-ui-theme="light"] .authoring-chat,
+html[data-ui-theme="light"] .authoring-intent-compact,
+html[data-ui-theme="light"] .terminal-header,
+html[data-ui-theme="light"] .terminal-panel,
+html[data-ui-theme="light"] .right-workspace,
+html[data-ui-theme="light"] .authoring-task-group,
+html[data-ui-theme="light"] .authoring-task,
+html[data-ui-theme="light"] .timeline-panel,
+html[data-ui-theme="light"] .timeline-lane {
+  border-color: var(--ui-border);
+}
+
+html[data-ui-theme="light"] .authoring-workspace-header,
+html[data-ui-theme="light"] .terminal-header,
+html[data-ui-theme="light"] .authoring-task-group header,
+html[data-ui-theme="light"] .timeline-panel {
+  background: var(--ui-panel-subtle);
+}
+
+html[data-ui-theme="light"] .chat-rail-status,
+html[data-ui-theme="light"] .chat-rail-hint,
+html[data-ui-theme="light"] .chat-rail-message strong,
+html[data-ui-theme="light"] .chat-assistant.is-working,
+html[data-ui-theme="light"] .chat-steps,
+html[data-ui-theme="light"] .chat-steps-toggle,
+html[data-ui-theme="light"] .gantt-status,
+html[data-ui-theme="light"] .gantt-warn-group-heading,
+html[data-ui-theme="light"] .gantt-ruler-label,
+html[data-ui-theme="light"] .gantt-ruler-text,
+html[data-ui-theme="light"] .scene-launcher-panel p,
+html[data-ui-theme="light"] .scene-launcher-status,
+html[data-ui-theme="light"] .scene-launcher-meta,
+html[data-ui-theme="light"] .scene-controls label,
+html[data-ui-theme="light"] .camera-export-row span,
+html[data-ui-theme="light"] .timeline-clock,
+html[data-ui-theme="light"] .timeline-label,
+html[data-ui-theme="light"] .authoring-workspace-header span,
+html[data-ui-theme="light"] .authoring-help,
+html[data-ui-theme="light"] .authoring-count,
+html[data-ui-theme="light"] .authoring-task-group header span,
+html[data-ui-theme="light"] .authoring-phase-message p,
+html[data-ui-theme="light"] .authoring-chat-empty,
+html[data-ui-theme="light"] .authoring-ground-reason,
+html[data-ui-theme="light"] .authoring-strategy small,
+html[data-ui-theme="light"] .authoring-task-goal,
+html[data-ui-theme="light"] .authoring-target-editor p {
+  color: var(--ui-text-muted);
+}
+
+html[data-ui-theme="light"] .chat-assistant,
+html[data-ui-theme="light"] .gantt-lane-label,
+html[data-ui-theme="light"] .authoring-intent-compact p,
+html[data-ui-theme="light"] .scene-launcher-panel label {
+  color: var(--ui-text-soft);
+}
+
+html[data-ui-theme="light"] .chat-steps-toggle:hover {
+  color: var(--ui-text-soft);
+}
+
+html[data-ui-theme="light"] .chat-rail-message p,
+html[data-ui-theme="light"] .authoring-chat-message,
+html[data-ui-theme="light"] .authoring-undo,
+html[data-ui-theme="light"] .gantt-track,
+html[data-ui-theme="light"] .debug-pin-row {
+  background: #f0f4f1;
+}
+
+html[data-ui-theme="light"] .chat-rail-message.is-user p,
+html[data-ui-theme="light"] .authoring-chat-message.is-user {
+  background: var(--ui-accent-soft);
+}
+
+html[data-ui-theme="light"] .authoring-chat-message strong,
+html[data-ui-theme="light"] .authoring-eyebrow,
+html[data-ui-theme="light"] .scene-launcher-nav a,
+html[data-ui-theme="light"] .scene-status-nav a {
+  color: var(--ui-accent);
+}
+
+html[data-ui-theme="light"] .authoring-chat-message p {
+  color: var(--ui-text);
+}
+
+html[data-ui-theme="light"] .composer-box,
+html[data-ui-theme="light"] .scene-launcher-row input,
+html[data-ui-theme="light"] .scene-launcher-row button,
+html[data-ui-theme="light"] .gantt-icon-btn,
+html[data-ui-theme="light"] .gantt-version-select,
+html[data-ui-theme="light"] .gantt-speed,
+html[data-ui-theme="light"] .scene-reset-button,
+html[data-ui-theme="light"] .scene-explore-button,
+html[data-ui-theme="light"] .debug-panel-toggle,
+html[data-ui-theme="light"] .camera-export-row button,
+html[data-ui-theme="light"] .scene-open-row input,
+html[data-ui-theme="light"] .scene-open-row button,
+html[data-ui-theme="light"] .debug-pin-head button,
+html[data-ui-theme="light"] .debug-pin-row button,
+html[data-ui-theme="light"] .trajectory-controls select,
+html[data-ui-theme="light"] .trajectory-controls input,
+html[data-ui-theme="light"] .trajectory-controls button,
+html[data-ui-theme="light"] .timeline-head button,
+html[data-ui-theme="light"] .timeline-row select,
+html[data-ui-theme="light"] .authoring-chat-composer textarea,
+html[data-ui-theme="light"] .authoring-workspace button,
+html[data-ui-theme="light"] .authoring-workspace select,
+html[data-ui-theme="light"] .terminal-actions button {
+  border-color: var(--ui-border-strong);
+  background: var(--ui-control);
+  color: var(--ui-text);
+}
+
+html[data-ui-theme="light"] .ref-composer {
+  color: var(--ui-text);
+}
+
+html[data-ui-theme="light"] .ref-composer.is-empty::before {
+  color: var(--ui-text-muted);
+}
+
+html[data-ui-theme="light"] .composer-box:focus-within,
+html[data-ui-theme="light"] .authoring-chat-composer textarea:focus {
+  border-color: #6aa787;
+  box-shadow: 0 0 0 2px rgba(47, 125, 87, 0.12);
+}
+
+html[data-ui-theme="light"] .ref-token,
+html[data-ui-theme="light"] .ref-token.is-plan_task {
+  background: #e5f3eb;
+  color: #205c3f;
+}
+
+html[data-ui-theme="light"] .ref-token.is-position,
+html[data-ui-theme="light"] .ref-token.message-ref-chip.is-facility {
+  background: #fff4d8;
+  color: #75510a;
+}
+
+html[data-ui-theme="light"] .composer-icon-btn.plan-ref,
+html[data-ui-theme="light"] .composer-icon-btn.pin {
+  background: #edf2ef;
+  color: #405249;
+}
+
+html[data-ui-theme="light"] .composer-icon-btn.plan-ref:hover,
+html[data-ui-theme="light"] .composer-icon-btn.pin:hover {
+  background: #e1e9e4;
+}
+
+html[data-ui-theme="light"] .composer-icon-btn.plan-ref.is-active {
+  background: #dcefe4;
+  color: #205c3f;
+}
+
+html[data-ui-theme="light"] .composer-icon-btn.pin.is-active {
+  background: #fff0c8;
+  color: #75510a;
+}
+
+html[data-ui-theme="light"] .composer-icon-btn.send,
+html[data-ui-theme="light"] .authoring-workspace .authoring-primary {
+  border-color: var(--ui-accent);
+  background: var(--ui-accent);
+  color: #ffffff;
+}
+
+html[data-ui-theme="light"] .composer-icon-btn.send:hover,
+html[data-ui-theme="light"] .authoring-workspace .authoring-primary:hover {
+  background: #276b4a;
+  color: #ffffff;
+}
+
+html[data-ui-theme="light"] .gantt-warn-popover {
+  background: rgba(255, 255, 255, 0.98);
+  border-color: var(--ui-border-strong);
+  box-shadow: 0 10px 30px var(--ui-shadow);
+}
+
+html[data-ui-theme="light"] .gantt-warn-badge,
+html[data-ui-theme="light"] .gantt-warn-row,
+html[data-ui-theme="light"] .gantt-conflict-marker,
+html[data-ui-theme="light"] .compile-warnings {
+  color: #855709;
+}
+
+html[data-ui-theme="light"] .gantt-icon-btn:hover:not(:disabled),
+html[data-ui-theme="light"] .scene-reset-button:hover:not(:disabled),
+html[data-ui-theme="light"] .scene-explore-button:hover:not(:disabled),
+html[data-ui-theme="light"] .scene-launcher-row button:hover,
+html[data-ui-theme="light"] .camera-export-row button:hover:not(:disabled),
+html[data-ui-theme="light"] .scene-open-row button:hover,
+html[data-ui-theme="light"] .trajectory-controls button:hover,
+html[data-ui-theme="light"] .timeline-head button:hover:not(:disabled),
+html[data-ui-theme="light"] .authoring-workspace button:hover,
+html[data-ui-theme="light"] .authoring-workspace select:hover,
+html[data-ui-theme="light"] .terminal-actions button:hover {
+  background: var(--ui-control-hover);
+}
+
+html[data-ui-theme="light"] .gantt-icon-btn.subtitle-toggle.is-active,
+html[data-ui-theme="light"] .gantt-icon-btn.subtitle-toggle.is-active:hover {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+}
+
+html[data-ui-theme="light"] .gantt-ruler {
+  border-top-color: #aebbb4;
+}
+
+html[data-ui-theme="light"] .gantt-ruler-mark {
+  background: #9aa8a0;
+}
+
+html[data-ui-theme="light"] .gantt-bar-label {
+  color: #17384f;
+}
+
+html[data-ui-theme="light"] .gantt-bar.is-support .gantt-bar-label {
+  color: #4f2d68;
+}
+
+html[data-ui-theme="light"] .gantt-bar-remove {
+  background: rgba(255, 255, 255, 0.72);
+  color: #405249;
+}
+
+html[data-ui-theme="light"] .gantt-playhead,
+html[data-ui-theme="light"] .gantt-playhead::after {
+  background: #26332d;
+}
+
+html[data-ui-theme="light"] .gantt-playhead {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.65);
+}
+
+html[data-ui-theme="light"] .robot-identity-label,
+html[data-ui-theme="light"] .scene-entity-label,
+html[data-ui-theme="light"] .status-panel,
+html[data-ui-theme="light"] .plan-task-subtitles {
+  border-color: var(--ui-border-strong);
+  background: rgba(255, 255, 255, 0.91);
+  color: var(--ui-text);
+  box-shadow: 0 5px 18px var(--ui-shadow);
+}
+
+html[data-ui-theme="light"] .plan-task-subtitle-task {
+  color: var(--ui-text-muted);
+}
+
+html[data-ui-theme="light"] .status-panel.is-collapsed {
+  background: rgba(255, 255, 255, 0.88);
+}
+
+html[data-ui-theme="light"] .standoff-export,
+html[data-ui-theme="light"] .camera-export-preview {
+  border-color: var(--ui-border);
+  background: #edf2ef;
+  color: #31423a !important;
+}
+
+html[data-ui-theme="light"] .debug-pin-panel {
+  background: #fff9e9;
+}
+
+html[data-ui-theme="light"] .debug-pin-head button.is-active {
+  color: #6e4d08;
+}
+
+html[data-ui-theme="light"] .debug-pin-status {
+  color: #765b20;
+}
+
+html[data-ui-theme="light"] .timeline-lane {
+  background: #eef2f0;
+}
+
+html[data-ui-theme="light"] .timeline-chip {
+  background: #dff2e5;
+  color: #174c2c;
+}
+
+html[data-ui-theme="light"] .timeline-chip-x {
+  color: #2f6842;
+}
+
+html[data-ui-theme="light"] .right-workspace-divider {
+  border-color: var(--ui-border);
+  background: #e5ebe7;
+}
+
+html[data-ui-theme="light"] .right-workspace-divider::after {
+  background: #9eaaa3;
+}
+
+html[data-ui-theme="light"] .authoring-intent-summary,
+html[data-ui-theme="light"] .authoring-target-editor {
+  background: #eef8f2;
+  color: var(--ui-text);
+}
+
+html[data-ui-theme="light"] .authoring-status,
+html[data-ui-theme="light"] .authoring-strategy-title > span {
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent);
+}
+
+html[data-ui-theme="light"] .authoring-workspace .authoring-strategy[aria-pressed="true"] {
+  background: var(--ui-accent-soft);
+}
+
+html[data-ui-theme="light"] .terminal-dot {
+  background: #98a49d;
+}
+
+html[data-ui-theme="light"] .terminal-xterm-frame {
+  background: #ffffff;
+}
+
+html[data-ui-theme="light"] .chat-assistant.is-error,
+html[data-ui-theme="light"] .chat-rail-error,
+html[data-ui-theme="light"] .authoring-ground-error,
+html[data-ui-theme="light"] .authoring-workspace .authoring-delete,
+html[data-ui-theme="light"] .status-panel pre {
+  color: #a43d3d;
+}

@@ -1,0 +1,49 @@
+# 依赖与构建产物
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+__pycache__/
+*.pyc
+*.egg-info/
+*.log
+MUJOCO_LOG.TXT
+
+# 调试输出
+backend/*.png
+
+# 编译缓存（体积大，换机器可重新生成）
+**/*.mjb
+
+# 密钥（切勿提交）
+.env
+.env.*
+!.env.example
+
+# 系统/编辑器
+.DS_Store
+Thumbs.db
+
+/frontend/public/*
+
+# Local environments and generated caches
+.venv/
+.pytest_cache/
+.ruff_cache/
+.tmp/
+
+# Machine-local and accidental outputs
+.claude/
+.coddex/
+# Large assets and data transferred separately
+/assets/
+/archive/
+/study/
+
+# Local agent files and experiment workspace
+/.agents/
+/experiments/
+/tests/
+/scripts/

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "mujoco": {
+      "source": "coolbeevip/mujoco-skills",
+      "sourceType": "github",
+      "skillPath": "skills/mujoco/SKILL.md",
+      "computedHash": "6b27934395955f77e23b247c20389f46b634de5ce1269a34ab4d7636a98ab7ad"
+    }
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "_comment": "Function-calling tool specs for the co-authoring LLM. Backed by src/mujoco_skills/service/skill_service.py. The LLM authors a plan (semantic steps, NO coordinates); the backend completes spatial fields and returns schedule + warnings. Vocabulary comes from get_manifest, split into `objects` (enumerable, pickable things), `facilities` (named anchors — capability is whichever of standoff/place/articulation is non-null on that entry, NOT a hand-typed role), `ops` (the parametric navigate/pick/place verbs and their argument constraints), and `skills` (only genuine pre-recorded Open/Close* articulation replays).",
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_manifest",
+        "description": "Return the scene's vocabulary: `objects` (pickable things, each with world_pos and — if one exists — a standoff to approach it), `facilities` (named anchors like island/sink/fridge/counter_left/upper_cabinet/drawer_*, each exposing standoff/place/articulation ONLY if that capability actually exists — e.g. island has standoff=null, so it cannot be navigated to directly), `ops` (navigate/pick/place argument rules), `skills` (Open/Close* replays with precondition/effect), and scene binding. Call this first so plans only reference valid names and respect each facility's actual capability.",
+        "parameters": { "type": "object", "properties": {}, "additionalProperties": false }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "standoff_for_point",
+        "description": "Given a rough target point, return a feasible base standoff pose on the floor facing it (clear of furniture, within arm reach). Use to check/realize a location the user pointed at loosely; if infeasible, propose a different point. Reachability is a 2D planar test.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "target_xy": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "World [x,y] the robot should work at." }
+          },
+          "required": ["target_xy"],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "compile_plan",
+        "description": "Compile an authoring plan into an executable schedule. Returns per-step start times, cross-robot conflict WARNINGS (shared facility/object/space at overlapping times; placement collisions) which you should resolve by reassigning, reordering, or adding step-level `after` dependencies, and a `completed` plan with backend-filled spatial defaults (standoff/full route/drop point) for inspection. Author only semantic steps — never coordinates; the backend computes geometry.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "plan": {
+              "type": "object",
+              "properties": {
+                "tasks": {
+                  "type": "array",
+                  "description": "Semantic tasks. Each is one robot's ordered group of steps.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "task": { "type": "string", "description": "Human-readable label, e.g. 'move mug_1 to sink'." },
+                      "robot": { "type": "string", "enum": ["robot0", "robot1"] },
+                      "steps": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": { "type": "string", "description": "Optional stable id so other steps can depend on this one." },
+                            "op": { "type": "string", "description": "One of: navigate, pick, place, reset, wait, or a skill name from get_manifest's `skills` list (e.g. OpenFridge)." },
+                            "target": { "type": "string", "description": "navigate: an object or facility name whose manifest entry has a non-null `standoff`." },
+                            "object": { "type": "string", "description": "pick/place: object name from `objects`." },
+                            "grasp_mode": { "type": "string", "enum": ["top_down", "horizontal"], "description": "pick only: optional grasp approach; defaults to top_down." },
+                            "return_to_ready": { "type": "boolean", "description": "horizontal pick only: return the closed gripper and carried object to the standard ready arm after retreat; defaults to true." },
+                            "dest": { "type": "string", "description": "place: a facility name whose manifest entry has a non-null `place` (today only 'sink' is actually wired to compile; other destinations will error)." },
+                            "retreat": { "type": "number", "minimum": 0, "description": "reset only: backward distance in metres; defaults to 0.18." },
+                            "preserve_yaw": { "description": "reset: true; navigate: 'auto' to translate without turning when final yaw already matches.", "oneOf": [{ "type": "boolean" }, { "type": "string", "enum": ["auto"] }] },
+                            "duration": { "type": "number", "description": "wait: seconds." },
+                            "after": {
+                              "type": "array",
+                              "items": { "type": "string" },
+                              "description": "Step ids (any robot) this step must start after — the mechanism for coordination (e.g. robot1 waits for robot0 to finish at a shared facility)."
+                            }
+                          },
+                          "required": ["op"],
+                          "additionalProperties": true
+                        }
+                      }
+                    },
+                    "required": ["robot", "steps"],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": ["tasks"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["plan"],
+          "additionalProperties": false
+        }
+      }
+    }
+  ]
+}

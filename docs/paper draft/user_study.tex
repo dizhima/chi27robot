@@ -1,0 +1,209 @@
+\section{User Study}
+\label{sec:user-study}
+
+% \subsection{Study Goals}
+
+We conducted a two-phase user study to investigate how structured plan context supports users in revising an evolving multi-robot plan.
+The two phases correspond to two intent regimes.
+In the first phase, participants knew exactly what outcome they wanted: given a target execution shown as a captioned video, they had to revise the current plan to reproduce it, and we evaluate \oursystem{} against a baseline without plan context.
+In the second phase, participants had no fixed outcome in mind: they used the full system to explore and adjust a plan to their own preferences, and we evaluate overall usability and user experience.
+The study lasted around 80 minutes and was approved by our organization's internal review board.
+
+\subsection{Participants}
+
+We recruited \textbf{[12--14]} participants from a university population (xx male, xx female; average age xx).
+Prior experience with robotics, robot programming, or multi-robot systems were not required because the system is intended to support non-expert users.
+Participants received \$50 after the study.
+
+
+\subsection{Conditions}
+
+We compared two methods that shared the same underlying language model, planning pipeline, coordination mechanisms, simulated environment, and execution capabilities.
+The conditions differed in whether the current multi-robot plan was exposed as structured interaction context.
+Both conditions ran on the same interface: participants could replay the simulated execution of the current plan at any time, and the baseline differed only in that the Gantt timeline and task-reference functionality were hidden.
+
+\paragraph{Autonomous Planning Baseline.}
+
+The baseline used the same underlying planning and execution pipeline as our system, but hid the Gantt timeline visualization and plan-reference functionality.
+Each planning request was treated as a self-contained task specification, and the previously generated plan was not provided to the language model as structured context for subsequent requests.
+Consequently, when participants wanted to revise an existing plan, they needed to describe a complete revised task specification that encoded both the requested change and the existing task decisions that should be preserved.
+The system then autonomously generated a new multi-robot plan from this revised specification.
+Participants could observe the resulting execution in the simulated environment, but could not directly inspect or refer to individual tasks in the previously generated plan.
+
+\paragraph{Plan-Contextualized Co-Authoring.}
+
+Our full system retained the current multi-robot plan as structured context across revisions and presented it through an interactive Gantt timeline.
+Users could inspect task assignments and ordering and select one or more tasks --- including tasks assigned to different robots --- as structured references for subsequent language input.
+Because these references were resolved against the current plan, users could express only the intended local change without restating unaffected parts of the plan.
+The resulting revision was applied to the existing plan, which then became the structured context for subsequent interactions.
+
+% \paragraph{Direct manipulation disabled in both conditions.}
+% The full system additionally supports direct manipulation of the plan, such as dragging timeline bars to reassign or reorder tasks and adjusting waypoints and placements in the scene.
+% These capabilities were disabled in both conditions so that the comparison isolated the effect of visual and referential plan context on language-based revision; otherwise, participants could complete reordering trials by dragging without exercising either language condition.
+% We assessed these capabilities separately in Phase 2.
+
+\subsection{Procedure}
+
+\paragraph{Briefing (10 min)}
+Participants provided informed consent and completed a questionnaire about their demographic and relevant technical background.
+The experimenter then briefly introduced both system conditions, after which participants completed a short, unscored practice exercise with each system to become familiar with its basic interaction workflow.
+
+\paragraph{Phase 1 (40 min)}
+In the first phase, we compared our plan-contextualized co-authoring interface with an autonomous planning baseline.
+Each participant completed two multi-robot household tasks, using one condition for each task.
+Participants completed the kitchen-island sorting task first and the breakfast-preparation task second.
+The assignment of conditions to the two tasks was counterbalanced across participants.
+For each task, participants completed two revision rounds from standardized plan states, as detailed in Section~\ref{sec:phase1-tasks}.
+After completing each condition, participants filled out a brief post-condition questionnaire about plan understanding, local revision and preservation, and perceived predictability and control.
+
+\paragraph{Phase 2 (20 min)}
+In the second phase, we assessed the overall usability of the full system through free-form use.
+Each participant worked in the scenario they had completed under the \emph{baseline} condition in Phase 1.
+Participants authored their own plan and then adjusted it to their own preferences, thinking aloud throughout.
+A set of preference-framed prompt cards (e.g., arranging placements, keeping robots out of a region, adjusting who does what and in which order, adding an item) ensured that each capability had an occasion to be used, without prescribing which input channel --- language or direct manipulation --- to use.
+
+\paragraph{Debriefing (10 min)}
+Participants completed a post-study questionnaire and responded to open-ended questions about their experiences with our systems.
+
+\subsection{Phase 1}
+
+\begin{figure*}[h!]
+  \centering
+  \includegraphics[width=\linewidth]{figures/UserStudyPhase1Setup.pdf}
+  \caption{User study tasks.}
+  \Description{
+  }
+  \label{fig:phase1setup}
+\end{figure*}
+
+\subsubsection{Tasks and Revision Rounds}
+\label{sec:phase1-tasks}
+We designed two household scenarios (\autoref{fig:phase1setup}), each comprising a fixed initial two-robot plan followed by two target revision rounds.
+Each round specified the desired resulting plan, while participants could decide how to realize the revision.
+Each target differed from the current plan through a controlled combination of one or two newly introduced object-manipulation tasks and changes to task ordering or robot assignment.
+The initial and canonical target plans were generated in advance using the same planning pipeline and saved for use across study sessions.
+At the beginning of each scenario, only the initial plan was loaded into the assigned interface; the underlying prompts used to generate the saved plans were never shown to participants.
+Participants played the initial plan once in the simulator to familiarize themselves with its execution and could replay the current plan through the interface as needed.
+
+In each round, participants viewed a separate video of the target plan's execution and revised the current plan until it reproduced that target.
+The target plan itself remained inaccessible through the interface during the round.
+The video's subtitle identified each robot's current task; participants could replay and scrub the video at any time.
+% Target videos were identical across conditions and were never presented as Gantt timelines.
+Participants were not told which aspects of the current plan differed from the target or which operations would achieve the changes.
+After each round, the corresponding canonical target plan was loaded as the starting state for the next round, regardless of whether the participant had successfully reproduced it, ensuring that every participant began each round from the same plan structure.
+
+\paragraph{Kitchen-Island Sorting.}
+In this task, fruits, pieces of tableware, and pantry items were placed on a kitchen island.
+The overall goal was to store the fruits in the refrigerator, place the tableware in the sink, and put canned food and condiments in a cabinet.
+The task comprised multiple object-to-destination subtasks that could be distributed and ordered across the two robots.
+
+% \begin{itemize}
+% \item{Initial plan.}
+% Robot 0 stored two lemons and one apple in the refrigerator, while Robot 1 placed two mugs in the sink.
+
+% \item{First revision.}
+% Participants revised the plan so that Robot 1 stored both apples before handling the mugs, while Robot 0 remained responsible for the lemons.
+
+% \item{Second revision.}
+% The second revision added a canned-food storage task to the beginning of Robot 0's sequence.
+% The target assigned opening the refrigerator to Robot 1, which stored both apples before handling the mugs; Robot 0 stored the canned food before its two lemons and closed the refrigerator after completing them.
+% \end{itemize}
+
+\paragraph{Breakfast Preparation.}
+Participants prepared a two-person breakfast by gathering bowls, spoons, cereal, milk, and oranges from counters, a cabinet, and the refrigerator and placing them on the kitchen island. 
+The task required the two robots to coordinate multiple retrievals and shared access to storage facilities.
+% In this task, participants prepared a two-person breakfast by gathering items from different locations in the kitchen and placing them in a designated breakfast area on the island.
+% The items included two freshly washed bowls on the counter by the sink, two spoons laid out on another counter, a cereal box in an upper cabinet, and a bottle of milk and two oranges in the refrigerator.
+% Retrieving the refrigerated and cabinet items required opening and closing the corresponding facility, while the counter items could be picked up directly.
+% The task therefore produced a multi-step plan in which object-retrieval subtasks and access to shared facilities were coordinated across the two robots.
+
+% \begin{itemize}
+% \item{Initial plan.}
+% Robot 0 moved the milk to the island, closed the refrigerator, and then moved both spoons to the island, while Robot 1 moved both bowls to the island.
+
+% \item{First revision.}
+% Participants added a cereal-retrieval task to the beginning of Robot 0's sequence and an orange-retrieval task to the beginning of Robot 1's sequence.
+% Robot 0 then continued with the milk and spoons, while Robot 1 continued with the bowls.
+
+% \item{Second revision.}
+% Participants added the second orange to Robot 1's work and placed both orange-retrieval tasks after its two bowl-retrieval tasks.
+% The refrigerator was consequently closed only after both oranges had been retrieved.
+% \end{itemize}
+
+The full initial and target plan specifications appear in \autoref{app:revision-scripts}.
+
+
+\subsubsection{Results}
+% Measures (expanded in this subsection rather than a separate Measures paragraph):
+%
+% Success (auto-scored from the structured plan, NOT from execution timelines):
+% - Round success = structural equivalence to the target plan (task set, assignments,
+%   per-robot order, cross-robot partial order; absolute timing excluded), evaluated after
+%   each turn; turn/time cap TBD from pilot.
+%
+% Efficiency (per round):
+% - Total words across all revision prompts (linguistic expression burden).
+% - Revision turns to convergence or the round cap.
+% - Round time (target video first shown -> match or cap).
+%
+% Subjective post-condition questionnaire (administer the same items after each condition):
+%
+% Agreement items (1 = Strongly disagree, 7 = Strongly agree):
+% Plan understanding:
+% 1. I could easily understand how tasks were assigned and ordered in the current plan.
+% 2. I could easily find the plan information I needed when deciding what to revise.
+%
+% Local revision and preservation:
+% 3. I could express the intended revisions without restating parts of the plan that should
+%    remain unchanged.
+% 4. The system preserved the parts of the plan that I did not intend to change.
+%
+% Predictability and control:
+% 5. I could predict how the system would revise the plan in response to my requests.
+% 6. I felt in control while revising the plan.
+%
+% Debriefing: forced-choice condition preference + open-ended rationale.
+%
+% Analysis: paired comparisons for success, turns, time, total prompt words, and the three
+% subjective constructs; account for repeated rounds within participant. Finalize the item
+% list after the pilot and freeze it before the first study participant.
+
+\subsection{Phase 2}
+\subsubsection{Task}
+% Design rationale (expand into prose):
+% - Coverage goal: everything Phase 1 excluded — (1) from-scratch authoring (DG1 full loop;
+%   Phase 1 used fixed initial plans), (2) Gantt direct manipulation (drag reorder/reallocate),
+%   (3) scene-level fine-tuning (waypoints, placements — formative P8), (4) free use of
+%   plan-reference and scene-reference chips.
+% - Scenario = the participant's Phase-1 BASELINE scenario (counterbalanced, so half sorting /
+%   half breakfast): familiar task semantics, but full system is fresh in it; enables
+%   spontaneous baseline-vs-full-system comparisons in think-aloud.
+% - Prompt cards adapted per scenario (placement card: aesthetic framing for breakfast,
+%   practical framing for sorting); walkthrough first so non-use of a feature is a choice,
+%   not ignorance.
+% - Experimenter keeps a known-capability-limits sheet + plan-reset recovery protocol for
+%   free-form dead ends.
+\subsubsection{Results}
+% - No target-success scoring here (no canonical plan): behavioral logs + subjective only.
+% - Key table: % of each edit type performed via language vs. direct manipulation
+%   (the empirical answer to the DM/language-overlap question).
+% - SUS for the full system (once, here — not per condition).
+%
+% Feature-specific agreement items (1 = Strongly disagree, 7 = Strongly agree; include a
+% "Did not use" option so participants do not rate features they did not try):
+%
+% Conversational editing with grounded references:
+% 1. I could use language to express the task changes I intended.
+% 2. Selecting objects, locations, or plan tasks as references made it easier to express
+%    what I meant.
+%
+% Direct manipulation of the timeline:
+% 3. The timeline made it easy to understand task assignments and ordering.
+% 4. Dragging tasks on the timeline made it easy to reorder or reassign them.
+%
+% Direct manipulation in the scene:
+% 5. The scene controls made it easy to adjust robot routes.
+% 6. The scene controls made it easy to adjust object placements.
+%
+% - Think-aloud + interview themes: which revisions users prefer to say vs. drag, and why;
+%   do NOT frame interview questions as baseline comparisons (demand characteristics).

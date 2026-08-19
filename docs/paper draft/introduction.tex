@@ -1,0 +1,58 @@
+\section{Introduction}
+\label{sec:introduction}
+
+% ---------------------------------------------------------------
+% P1: Scenario and opportunity
+% ---------------------------------------------------------------
+Multi-robot systems are moving beyond structured industrial cells into everyday environments such as homes, offices, and warehouses, where teams of robots are expected to coordinate tasks in a shared space~\cite{}.
+Recent advances in large language models (LLMs) have made it substantially easier to direct such teams: a user can describe a task in natural language, and an LLM-based planner decomposes the request into subtasks, allocates them across robots, and coordinates their execution~\cite{chen2025emos, zhang2025lamma, kannan2024smart, singh2022progprompt}. % e.g., EMOS, LaMMA-P, SMART-LLM, RoCo
+These systems demonstrate that natural language can serve as a viable entry point for commanding a robot team, lowering a barrier that previously required expertise in multi-robot planning and programming.
+
+% ---------------------------------------------------------------
+% P2: The prevailing paradigm and its interaction assumption
+% ---------------------------------------------------------------
+Underlying these systems, however, is a shared interaction paradigm that we characterize as \emph{task-centric autonomous planning}.
+The user's instruction is treated as an upfront task specification; the system then internally performs decomposition, allocation, and returns an executable result.
+Although some pipelines iterate internally---for example, through simulation feedback~\cite{COHERENT} or inter-agent negotiation~\cite{mandi2024roco}---the resulting team plan remains an internal product of the planner.
+What the user receives is the execution outcome, not the plan itself: which robot was assigned which task, in what order, and under which cross-robot dependencies is rarely exposed as a structured, human-facing artifact that the user can act upon~\cite{}.
+
+% ---------------------------------------------------------------
+% P3: The HCI gap (analytical argument + adjacent literature)
+% ---------------------------------------------------------------
+This paradigm implicitly assumes that users can and will express their intent completely in advance.
+Yet a long line of HCI research suggests otherwise: users' intent is typically partial and evolves through interaction, whether they are iterating on prompts for generative models~\cite{zamfirescu2023johnny, subramonyam2024bridging}, incrementally repairing end-user robot programs~\cite{kim2026robocritics}, or steering machine-generated plans and schedules in mixed-initiative systems~\cite{}. % e.g., Horvitz; interactive scheduling
+When a user's intent shifts after seeing a generated plan---a different robot should fetch the bowl, or one retrieval should happen before another---the autonomous paradigm offers no channel for expressing that revision directly.
+Because the plan is not available as interaction context, the user's only recourse is to restate the entire task specification, re-encoding every decision the planner previously made and hoping the regenerated plan preserves the parts that were already satisfactory.
+Multi-robot settings make this mismatch particularly acute.
+A revision that is local from the user's perspective can propagate consequences across the team: inserting one task may change another robot's waiting time, facility-access order, or execution schedule~\cite{}.
+The user therefore faces a dilemma---they need to express a small, local change, yet manually specifying its team-wide coordination consequences is precisely the burden that autonomous planning was meant to remove.
+How this tension manifests in multi-robot task creation, and what support practitioners actually want, has not been examined first-hand.
+
+% ---------------------------------------------------------------
+% P4&5: Merged formative study and system
+% ---------------------------------------------------------------
+To understand this need in practice, we conducted a formative study with eight multi-robot researchers (\autoref{sec:formative-study}), who consistently framed task creation not as one-shot specification but as progressive refinement: beginning with partial intent, inspecting the resulting team plan, and revising individual planning decisions while preserving the rest.
+Motivated by these findings, we present \oursystem{}, a system for human--AI co-authoring of multi-robot task plans that supports users from initial natural-language intent through iterative plan refinement.
+Its central idea is to treat the evolving team plan as a \emph{persistent, structured interaction context} rather than an internal planning product, externalizing it as an interactive Gantt timeline alongside simulated execution.
+% Users can select plan elements and scene objects or locations as structured references for subsequent language input (e.g., selecting a task and saying ``add the pear after this''), or directly adjust execution details such as navigation waypoints and object placements.
+Extending multimodal instruction techniques that ground language in the scene~\cite{mahadevan2025imageinthat, masson2024directgpt}, % e.g., ImageInThat; pointing/AR grounding
+users can select not only scene objects and locations but also plan elements as structured references for subsequent language input (e.g., selecting a task and saying ``add the pear after this''), or directly adjust execution details such as navigation waypoints and object placements.
+After each revision, the system re-coordinates the full team plan, absorbing the cross-robot consequences of the local change, so that human and AI contributions accumulate over a single evolving plan rather than each request starting over again.
+
+% ---------------------------------------------------------------
+% P6: Evaluation overview
+% ---------------------------------------------------------------
+We evaluated \oursystem{} through a within-subjects user study comparing our system against an autonomous planning baseline that shared the same language model, planning pipeline, robots, and simulated environment but did not expose the plan as structured interaction context.
+Participants performed sequences of controlled local revisions---task insertion, reordering, and reallocation---on evolving two-robot household plans.
+\textbf{[One-sentence preview of the main quantitative and qualitative results, to be filled in after analysis.]}
+A complementary technical evaluation characterized the planning pipeline's ability to \textbf{[resolve revisions / maintain coordination constraints]} across \textbf{[N]} revision scenarios.
+
+% ---------------------------------------------------------------
+% P7: Contributions
+% ---------------------------------------------------------------
+In summary, we contribute:
+\begin{itemize}
+    \item A formative study with eight multi-robot researchers showing that practitioners frame multi-robot task creation as progressive refinement of an evolving plan rather than one-shot specification, along with three design goals for human--AI co-authoring of multi-robot plans.
+    \item \oursystem{}, a co-authoring system that exposes both the task scene and the evolving team plan as referable context for language interaction, supporting users from initial natural-language intent through iterative plan refinement while automatically re-coordinating the team-wide consequences of local revisions.
+    \item A user study and technical evaluation comparing co-authoring against an autonomous natural-language planning baseline, characterizing how structured plan context affects users' efficiency, ability to preserve unaffected parts of the plan, and perceived control when making repeated local revisions.
+\end{itemize}

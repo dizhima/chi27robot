@@ -1,0 +1,57 @@
+% Appendix: initial and target plan specifications for the Phase-1 target-matching rounds.
+% Referenced from user_study.tex as \autoref{app:revision-scripts}.
+% Participants never see these listings: each round's target is presented ONLY as a
+% captioned execution video (captions = each robot's current task; when a robot is idle,
+% the reason it is waiting). The video can be re-watched and scrubbed at any time and is
+% identical across conditions. Robots are referred to as "robot 0" and "robot 1" in all
+% participant-facing material (matching their labels in the interface and captions).
+
+\section{Initial and Target Plans}
+\label{app:revision-scripts}
+
+\subsection{Kitchen Island Sorting}
+
+\paragraph{Initial plan.}
+\begin{itemize}
+    \item robot0: open fridge --- lemon\_1 $\rightarrow$ fridge --- lemon\_2 $\rightarrow$ fridge --- apple\_1 $\rightarrow$ fridge --- close fridge
+    \item robot1: mug\_1 $\rightarrow$ sink --- mug\_2 $\rightarrow$ sink
+\end{itemize}
+
+\paragraph{Round 1 target.}
+\begin{itemize}
+    \item robot0: open fridge --- lemon\_1 $\rightarrow$ fridge --- lemon\_2 $\rightarrow$ fridge --- close fridge
+    \item robot1: \underline{apple\_1 $\rightarrow$ fridge --- apple\_2 $\rightarrow$ fridge} --- mug\_1 $\rightarrow$ sink --- mug\_2 $\rightarrow$ sink
+\end{itemize}
+Compared with the initial plan, robot1 stores apple\_1 and the newly introduced apple\_2 before handling the mugs, while robot0 remains responsible for the lemons.
+Robot1's fridge access requires the door robot0 opens and closes; the system defers robot0's close-fridge until robot1's apples are placed.
+
+\paragraph{Round 2 target.}
+\begin{itemize}
+    \item robot0: lemon\_1 $\rightarrow$ fridge --- lemon\_2 $\rightarrow$ fridge --- close fridge --- \underline{canned\_food $\rightarrow$ cabinet --- condiment $\rightarrow$ cabinet --- close cabinet}
+    \item robot1: \underline{open fridge} --- apple\_1 $\rightarrow$ fridge --- apple\_2 $\rightarrow$ fridge --- mug\_1 $\rightarrow$ sink --- mug\_2 $\rightarrow$ sink
+\end{itemize}
+Compared with the first-round target, robot1 opens the refrigerator before storing both apples and handling the mugs.
+Robot0 stores the two lemons and closes the refrigerator before completing two newly introduced pantry-storage tasks, moving the canned food and condiment into the cabinet and then closing it.
+
+\subsection{Breakfast Preparation}
+
+\paragraph{Initial plan.}
+\begin{itemize}
+    \item robot0: milk $\rightarrow$ island --- close fridge --- spoon\_1 $\rightarrow$ island --- spoon\_2 $\rightarrow$ island
+    \item robot1: bowl\_1 $\rightarrow$ island --- bowl\_2 $\rightarrow$ island
+\end{itemize}
+
+\paragraph{Round 1 target.}
+\begin{itemize}
+    \item robot0: milk $\rightarrow$ island --- close fridge --- spoon\_1 $\rightarrow$ island --- spoon\_2 $\rightarrow$ island --- \underline{open cabinet --- cereal $\rightarrow$ island --- close cabinet}
+    \item robot1: \underline{orange\_1 $\rightarrow$ island} --- bowl\_1 $\rightarrow$ island --- bowl\_2 $\rightarrow$ island
+\end{itemize}
+Compared with the initial plan, robot0 adds a cereal-retrieval task after completing its existing milk and spoon tasks, while robot1 begins by retrieving the newly introduced orange before continuing with the bowls.
+
+\paragraph{Round 2 target.}
+\begin{itemize}
+    \item robot0: milk $\rightarrow$ island --- spoon\_1 $\rightarrow$ island --- spoon\_2 $\rightarrow$ island --- open cabinet --- cereal $\rightarrow$ island --- close cabinet
+    \item robot1: bowl\_1 $\rightarrow$ island --- bowl\_2 $\rightarrow$ island --- \underline{orange\_1 $\rightarrow$ island --- orange\_2 $\rightarrow$ island --- close fridge}
+\end{itemize}
+Compared with the first-round target, robot1 moves orange\_1 after its two bowl-retrieval tasks and retrieves the newly introduced orange\_2 immediately afterward.
+The refrigerator remains open through robot0's milk retrieval and is closed by robot1 only after both oranges have been retrieved.

@@ -1,0 +1,297 @@
+% Required packages:
+% \usepackage{booktabs}
+% \usepackage{tabularx}
+% \usepackage{array}
+
+\section{Formative Study}
+\label{sec:formative-study}
+
+To ground the design of our human--AI co-authoring system in the practical demands of multi-robot task creation, we conducted a formative study with researchers experienced in multi-robot systems. 
+In total, we recruited eight participants whose research expertise spanned multi-agent systems, navigation, manipulation, robot learning,  vision-language-action models, and human--robot interaction.
+Our participants included five Ph.D. students, one master's student, and two industry researchers, with one to six years of relevant research experience.
+~\autoref{tab:formative-participants} summarizes their backgrounds and the multi-robot systems discussed during the interviews.
+
+\begin{table*}[t]
+    \centering
+    \footnotesize
+    \setlength{\tabcolsep}{5pt}
+    \renewcommand{\arraystretch}{1.15}
+    \caption{Participant research backgrounds.
+    YoE denotes years of experience.}
+    \label{tab:formative-participants}
+
+    \begin{tabularx}{0.94\textwidth}{
+        @{}
+        >{\centering\arraybackslash}p{0.045\textwidth}
+        >{\centering\arraybackslash}p{0.045\textwidth}
+        >{\raggedright\arraybackslash}p{0.25\textwidth}
+        >{\raggedright\arraybackslash}X
+        @{}
+    }
+        \toprule
+        \textbf{ID}
+        & \textbf{YoE}
+        & \multicolumn{1}{c}{\textbf{Research expertise}}
+        & \multicolumn{1}{c}{\textbf{Multi-robot systems discussed}} \\
+        \midrule
+
+        P1 & 1--3
+           % & Multi-agent systems; navigation
+           & Multi-agent navigation systems
+           & Drone and ground-robot teams for search and target tracking. \\
+
+        P2 & 4--6
+           & Multi-robot systems; HRI
+           & Multi-robot object retrieval and placement;
+             multi-AGV factory logistics. \\
+
+        P3 & 4--6
+           & Robot learning; HRI
+           & Indoor collaboration among cleaning robots and mobile
+             manipulators. \\
+
+        P4 & 4--6
+           & Multi-agent manipulation systems
+           & Collaborative box carrying and coordination with multiple
+             humanoid robots. \\
+
+        P5 & 4--6
+           & Multi-agent navigation systems 
+           & Multi-drone navigation; drone and ground-robot teams for
+             search and rescue. \\
+
+        P6 & 4--6
+           & Robot learning; manipulation; HRI
+           & Indoor multi-robot search and mapping;
+             multi-robot factory coordination. \\
+
+        P7 & 1--3
+           & Multi-agent systems
+           & Indoor IoT--robot collaboration involving multiple mobile manipulators. \\
+
+        P8 & 4--6
+           & Multi-agent systems; robot learning
+           & Indoor multi-robot rearrangement; multi-robot factory coordination. \\
+
+        \bottomrule
+    \end{tabularx}
+\end{table*}
+
+\subsection{Procedure}
+
+We conducted remote, semi-structured interviews, each lasting approximately 30--45 minutes.
+With participants' consent, the interviews were audio-recorded and transcribed for analysis.
+Each participant received a \$50 e-gift card after the interview.
+The study was reviewed and approved by our organization's internal review board.
+The questions appear in \autoref{app:formative_interview}.
+The interviews followed a three-part protocol, with follow-up questions tailored to each participant's experience:
+
+\begin{itemize}
+    \item First, we asked participants about their research backgrounds, the simulators they had used, their prior multi-robot workflows, and their use of LLMs in robotics systems.
+
+    \item Second, we conducted an experience-based walkthrough of multi-robot task creation. 
+    Participants selected a representative multi-robot task that they had built, studied, observed, or would want to simulate. 
+    They described how the task arose, why it involved multiple robots, and how they translated the task idea into executable artifacts.
+
+    \item Third, building on the task and workflow discussed in the second part, we conducted a feature-brainstorming and design-concept elicitation activity. 
+    Participants reflected on potential forms of LLM-powered AI support, critiqued our preliminary design concepts, and suggested additional capabilities for multi-robot task authoring.
+\end{itemize}
+
+% \subsection{Design Considerations}
+
+% \subsubsection{DC1: Ground underspecified intent in an inspectable task representation}
+% Participants viewed natural language as a promising way to reduce the effort of specifying robot tasks, but they also identified limitations in treating language as a complete task specification. 
+% Everyday instructions may contain ambiguous references, omit operational details, or assume knowledge that novice users do not have. 
+% P3 noted that people commonly use expressions such as ``this'' and ``that,'' while a robot may not know what those expressions refer to, requiring more precise descriptions or pointing gestures. 
+% P3 further cautioned that a complete novice may not know how to instruct multiple robots and that free-form language could produce ``chaos and misunderstandings.'' 
+
+% Participants also suggested that AI could help transform an incomplete request into an explicit intermediate representation. P6 observed that people may state their intent in a disorganized way and proposed that the system first reorganize and display the request before asking, ``Are you sure this is what you want to do?'' Similarly, P1 described using an LLM to split a high-level objective into a chain of atomic search operations.
+
+% % \paragraph{Design opportunity.}
+% % Rather than translating a prompt directly into hidden execution code, an authoring system can treat intent specification as a mixed-initiative grounding process. 
+% % It can externalize its interpretation as editable semantic tasks, ground references in scene entities, expose inferred assumptions, and ask users to confirm or correct the resulting task representation. 
+% % This opportunity motivates our support for intent review, object and region selection, editable task decomposition, and explicit object-to-goal mappings.
+
+% \subsubsection{DC2: Support users in understanding and steering the division of work across robots}
+
+% The presence of multiple robots creates a division-of-work problem. 
+% Users must decide which robot should perform each task and when, while considering location, availability, workload, travel cost, task priority, and coordination dependencies. 
+% Multiple allocations may be feasible but produce different trade-offs in workload balance, congestion, or personal preference.
+
+% Participants described allocation as a decision that AI could propose but that people should remain able to inspect and arbitrate. 
+% P2 suggested that AI could estimate task success, generate a step-by-step order, and ``preview a plan for the human.'' 
+% P3 described a workload-aware intervention: if a user assigned a task to a busy robot while another capable robot was idle, the system could suggest the idle robot instead. 
+% P1 similarly described reallocating a search task to a robot closer to a newly hypothesized target location. 
+% Beyond recommending allocations, the representation of work must be legible. 
+% P5 proposed showing different columns for different robots, with rows representing their subtasks.
+
+% \subsubsection{DC3: Externalize interdependent team activities}
+
+% Multi-robot complexity arises not only from the number of assigned tasks but also from relationships among them. 
+% Plans may contain parallel activities, precedence constraints, waiting, and coordination for shared spaces or resources. 
+% These relationships are difficult to infer from a linear list of semantic tasks or from isolated trajectories.
+
+% P2 asked whether the system could visualize ``the cooperative relationship between two robots,'' noting that one robot may need to arrive before another can act. 
+% P3's domestic cleaning task illustrated such a dependency: two mobile manipulators first moved a piece of furniture, a cleaning robot cleaned underneath it, and the manipulators then returned the furniture. 
+
+% \subsubsection{DC4: Catch conflicts and infeasibility before execution, not through trial and error}
+
+% A plan that is semantically plausible may still be infeasible because of reachability, payload, spatial, temporal, or shared-resource constraints.
+% Participants distinguished problems that can be determined before execution, from the plan and the scene, from stochastic, behavior-dependent failures that only become evident during physical execution.
+
+% P3 described how a novice user may have no understanding of a robot's workspace and argued that a robot ``should not have to try and fail'' before the user discovers that an object is unreachable.
+% P2 described a semantic conflict in which two tasks must be completed within the same time window, even though the physical layout allows only one.
+% P1 similarly described a robot reporting that an object exceeded its weight limit, prompting reconsideration of the allocation.
+% Other failures remain inherently execution-dependent: P5 identified collision and failure to reach a goal as central simulation outcomes, while P4 noted that execution is affected by randomness in both the learned policy and the environment, such as a slippery object or floor.
+
+% \subsubsection{DC5: Enable execution-grounded and localized plan refinement}
+
+% Participants did not treat long-horizon plans as static artifacts that could be generated once and executed without revision. Execution may reveal new state, invalidate planning assumptions, expose stochastic failure, or help users form preferences that were not available during initial planning. Furthermore, changing one part of a multi-robot plan may affect downstream assignments, timing, and dependencies.
+
+% P4 described the desired workflow as repeatedly planning, executing, and observing. 
+% They argued that a planner cannot assume an entire long-horizon task will succeed and must instead use environmental feedback to determine whether to backtrack and produce a revised plan. 
+% P1 gave an example in which failing to find an object at Shelf A changed the system's hypothesis and could trigger a different search allocation. 
+% Participants also wanted interaction at different levels of granularity. 
+% P3 preferred keeping the simulation visible so that they could issue incremental commands such as moving a robot slightly to the right. 
+% P6 described allowing users to click a trajectory point or draw an arrow to express a spatial preference that the system could translate into a replanning objective.
+
+% \subsection{Findings}
+
+% \paragraph{F1: Language input needs grounding and completion}
+% Participants viewed natural language as a promising way to reduce the effort of specifying robot tasks, but they also identified limitations in treating language as a complete task specification.
+% Everyday instructions may contain ambiguous references, omit operational details, or assume knowledge that novice users do not have.
+% P3 noted that people commonly use expressions such as ``this'' and ``that,'' while a robot may not know what those expressions refer to, requiring more precise descriptions or pointing gestures.
+% % P3 further cautioned that a complete novice may not know how to instruct multiple robots and that free-form language could produce ``chaos and misunderstandings.''
+% P8 made the same point concrete: a single box in a scene is easy to request, but with ``different colored boxes or similar boxes at different locations, the language command now needs to be more detailed,'' and the system additionally needs scene context to resolve which robot and object are meant.
+% % P7 likewise found language cumbersome for precise spatial detail --- exactly where a box should go, or where a path should begin --- and proposed combining language with interactable scene elements: it may be hard to describe a particular point in words, ``but you can click it and tell the robot to go there.''
+% Beyond resolving references, participants expected the system to \emph{complete} what instructions leave out --- the omitted operational steps and orderings a request implies but never states --- and to return the result as an explicit, reviewable representation rather than acting on it silently.
+% P6 observed that people may state their intent in a disorganized way and proposed that the system first reorganize and display the request before asking, ``Are you sure this is what you want to do?''
+% Similarly, P1 described using an LLM to split a high-level objective into a chain of atomic search operations.
+
+% \paragraph{F2: Users need to see an inspectable plan of the multi-robot task}
+% Participants described how, in addition to watching a task roll out in simulation, an explicit plan representation could help them understand a multi-robot task.
+% Specifically, participants wanted to see the task plan at two levels: which robot performs which task in which order, and how each task will actually be carried out in the scene.
+% At the task level, P2 suggested that AI could generate a step-by-step order and ``preview a plan for the human,'' including the ordering across robots --- one robot may need to arrive before another can act.
+% P5 proposed showing different columns for different robots, with rows representing their subtasks, and P7 sketched a temporal tree in which users could see how each branch of the plan proceeds, select a branch, and edit it.
+% At the execution level, P7 valued that a simulator lets people ``rehearse the plan, fast-forward through it, and inspect the intermediate results.''
+% P7 also explained why this visibility must be aimed at people rather than delegated back to the model: current LLMs' ability ``to critique a 3D spatial situation is still relatively weak,'' so in the loop they envisioned, the plan is rehearsed in simulation and humans act as the ``monitors and evaluators.''
+
+% \paragraph{F3: Revisions are multi-granular}
+% Participants did not treat plans as static artifacts to be generated once; they expected to revise them --- and wanted each revision to be local, at the granularity of the thing being changed, rather than a restatement of the whole task.
+% The revisions they described span three levels: who does what, in which order, and where.
+% For allocation and ordering, P2 suggested letting users explore alternative allocation strategies --- for example, assigning each robot its own work zone, or having each robot handle only one type of object.
+% For spatial adjustments, P3 preferred keeping the simulation visible so that they could issue incremental commands such as moving a robot slightly to the right, and P6 described clicking a trajectory point or drawing an arrow to express a spatial preference.
+% P8 was specific about the interaction: raw waypoint coordinates are not editable in any meaningful sense (``I don't know what changing that waypoint would do''), whereas selecting a waypoint in the scene, dragging it, and adding or deleting points along a path would make plans directly adjustable.
+% % P8 also explained why such spatial edits cannot always be replaced by language: told only to avoid an obstacle, ``it becomes up to the LLM now how it chooses to avoid it,'' while the user may have a preference to pass on the left or the right that is hard to state but easy to show.
+% % P7 added that people also steer by imposing standing rules --- above all safety rules about ``what the robots must never do'' --- that bound whatever plans the model generates.
+
+% \paragraph{F4: Authoring is an iterative loop}
+% Beyond individual revisions, participants framed the overall process as a loop in which proposals, observation, and correction alternate between the person and the agent.
+% P4 described the desired workflow as repeatedly planning, executing, and observing: a planner cannot assume an entire long-horizon task will succeed, and must instead watch the execution to decide whether to produce a revised plan.
+% Within this loop, participants were consistent about the division of authority: P3 described allocation as a decision that AI could propose but that people should remain able to inspect and arbitrate, and P7 summarized the envisioned relationship as one in which ``the person and model would provide feedback to one another.''
+
+% \subsection{Design Goals}
+% \label{sec:design-goals}
+
+% Based on these findings, we focus on the following design goals of the authoring experience:
+
+% \begin{itemize}
+
+% \item{DG1: Turn user intent into a valid team plan (from F1).}
+% The system should follow the specificity the user provides: instructions that fully specify a task --- including explicit choices such as which robot performs it --- are obeyed as stated, while whatever is left unsaid is filled in automatically: goals are decomposed into tasks, references are grounded in scene entities, and implicit steps such as opening a fixture before placing into it are augmented.
+% Every plan returned to the user should already be checked for coordination problems, with repairable ones repaired and the rest reported honestly.
+
+% \item{DG2: Make the plan inspectable and editable at both levels (from F2, F3).}
+% The system should present the same plan in two linked views: a timeline showing each robot's tasks, their allocation and order; and in-scene overlays showing each task's execution details --- navigation routes, standoff poses, and target placements --- together with execution replay.
+% The same two views should be directly editable, capturing what language conveys poorly: at the macro level, reassigning and reordering tasks on the timeline; at the micro level, adjusting waypoints, standoffs, and placements in the scene.
+
+% \item{DG3: Sustain a co-authoring loop over one persistent plan (from F4).}
+% The plan is a shared artifact that persists across turns: each contribution --- a language turn or a manual edit --- revises the plan rather than replaces it, and every change is re-validated to keep the plan consistent (DG1).
+% Within the loop, each side contributes what it is better at: the agent proposes, completes, and repairs plans, while the user judges the results and decides the preferences, priorities, and spatial details that cannot be derived from the scene.
+% User decisions bind subsequent automation; agent changes remain visible and reversible; and when automation cannot satisfy a user decision, the system defers to the user rather than silently overriding it.
+
+% \end{itemize}
+
+\subsection{Findings}
+
+\subsubsection{F1: Language task specifications could be incomplete}
+
+Participants viewed natural language as a promising way to reduce the effort of specifying robot tasks, but they did not expect users to fully specify a multi-robot plan in a single instruction.
+Instead, they described initial natural language task specifications as partial expressions of intent that may contain ambiguous references and omit operational details.
+
+P3 noted that people commonly use expressions such as ``this'' and ``that,'' while a robot may not know what those expressions refer to, requiring more precise descriptions or pointing gestures.
+P8 made the same point concrete: a single box in a scene is easy to request, but with ``different colored boxes or similar boxes at different locations, the language command now needs to be more detailed,'' and the system additionally needs scene context to resolve which robot and object are meant.
+
+Beyond resolving references, participants expected the system to complete what users leave unspecified.
+These omissions include operational steps and orderings that are implied by a high-level request but never explicitly stated.
+P1 described using an LLM to split a high-level objective into a chain of atomic search operations.
+P6 similarly observed that people may state their intent in a disorganized way and proposed that the system first reorganize and then execute the simulation.
+
+Together, these accounts suggest that users should be able to begin from an incomplete high-level specification rather than having to anticipate and encode the entire multi-robot plan upfront.
+
+
+\subsubsection{F2: Multi-robot plans need to be externalized for inspection}
+
+Participants described how, in addition to watching a task roll out in simulation, an explicit plan representation could help them understand how a multi-robot task had been interpreted and coordinated.
+Specifically, participants wanted visibility at two levels: which robot performs which task and in which order, and how each task will actually be carried out in the scene.
+
+At the task level, P2 suggested that AI could generate a step-by-step order and ``preview a plan for the human,'' including ordering relationships across robots, such as when one robot needs to arrive before another can act.
+P5 proposed showing different columns for different robots, with rows representing their subtasks.
+P7 similarly sketched a temporal tree in which users could see how each branch of the plan proceeds, select a branch, and edit it.
+
+At the execution level, P7 valued that a simulator lets people ``rehearse the plan, fast-forward through it, and inspect the intermediate results.''
+P7 also explained why this visibility should remain available to people rather than being delegated entirely back to the model: current LLMs' ability ``to critique a 3D spatial situation is still relatively weak,'' so in the loop they envisioned, the plan is rehearsed in simulation and humans act as the ``monitors and evaluators.''
+
+These observations suggest that a generated plan should not remain an internal product of an autonomous planner.
+Instead, it should be externalized as an artifact that users can inspect before deciding whether and how to refine it.
+
+
+\subsubsection{F3: Users want to revise individual planning decisions rather than restate the whole task}
+
+Participants did not treat a generated plan as a static artifact to be accepted or replaced as a whole.
+Instead, they wanted to revise only the part of the plan that no longer matched their intent while leaving the remaining decisions intact.
+The revisions they described occurred at multiple levels, including who performs a task, in which order tasks are performed, and where actions occur in the scene.
+
+For allocation and ordering, P2 suggested letting users explore alternative allocation strategies, such as assigning each robot its own work zone or having each robot handle only one type of object.
+These changes alter the coordination strategy without necessarily changing the underlying task goal.
+
+For spatial adjustments, P3 preferred keeping the simulation visible so that users could issue incremental commands such as moving a robot slightly to the right.
+% P6 similarly described clicking a trajectory point or drawing an arrow to express a spatial preference.
+P8 was specific about the interaction: raw waypoint coordinates are not editable in any meaningful sense (``I don't know what changing that waypoint would do''), whereas selecting a waypoint in the scene, dragging it, and adding or deleting points along a path would make plans directly adjustable.
+
+Across these examples, participants described refinement as a local operation over an existing plan rather than repeated specification of the task from the beginning.
+This suggests that authoring tools should support revisions at the granularity of the planning decision being changed while preserving unaffected parts of the plan.
+
+
+\subsubsection{F4: Multi-robot task authoring is a progressive process}
+
+Beyond individual revisions, participants framed task creation as an iterative process in which planning decisions are proposed, inspected, and refined over time.
+P4 described the desired workflow as repeatedly planning, executing, and observing: a planner cannot assume that an entire long-horizon task will succeed, and must instead observe the execution before deciding whether a revised plan is needed.
+Participants also described a complementary division of roles between the person and the AI.
+P3 described task allocation and order as decisions that AI could propose but that people should remain able to inspect and change.
+% P7 summarized the envisioned relationship as one in which ``the person and model would provide feedback to one another.''
+
+These accounts suggest that the role of the user does not end once an initial task has been delegated.
+Instead, human and AI contributions accumulate as the plan evolves, with the system proposing and completing planning decisions and maintaining their execution-level consequences, while the user progressively inspects, revises, and constrains those decisions.
+
+
+\subsection{Design Goals}
+\label{sec:design-goals}
+
+Across these findings, participants did not describe multi-robot task creation as producing a complete specification and handing it off to an autonomous planner.
+Instead, they envisioned beginning with partial intent, inspecting how the system instantiated that intent into a team plan, and refining individual planning decisions as preferences or problems became apparent.
+This suggests a progressive authoring process in which the plan itself becomes the persistent object around which human and AI contributions accumulate.
+We translated this interaction model into three design goals:
+
+\begin{itemize}
+
+\item{DG1: Support partial specification and automatic completion (from F1).}
+The system should allow users to express a task at the level of specificity they currently have rather than requiring a complete multi-robot plan upfront.
+
+\item{DG2: Externalize the plan for inspection and local revision (from F2, F3).}
+The generated team plan should become a visible artifact through which users can understand both team-level coordination and scene-level execution.
+
+\item{DG3: Maintain team coordination as the plan evolves (from F4).}
+Across progressive revisions, users should only need to revise the plan at the level of semantic tasks while the system automatically re-establishes the inter-robot coordination.
+
+\end{itemize}

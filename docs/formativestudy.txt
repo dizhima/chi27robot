@@ -1,0 +1,54 @@
+﻿Formative study questionnaire
+Part 1: Background and Robotics / Multi-Robot Experience, 10 min
+Part 2: Experience-Based Walkthrough, 25 min
+Part 3: Prioritization + Reflection, 5 min
+Objective: Identify opportunities, boundaries, and requirements for LLM-agent co-authoring of multi-robot tasks.
+Questions:
+Part 1: Background and Robotics / Multi-Robot Experience
+Script: To start, I’d like to learn a bit about your background and experience with robotics and multi-robot workflows. This may include planning, authoring, simulation, deployment, debugging, or evaluation. There are no right or wrong answers; please answer based on your own experience.
+1. What is your current role and research area?
+2. What robotics or multi-robot workflows have you worked with or observed?
+Optional probes: planning, task specification, simulation, deployment, debugging, evaluation, human-robot interaction, benchmark design.
+3. What robotics simulators have you used? Examples: MuJoCo, Isaac Sim, Gazebo, PyBullet…
+4. Have you incorporated AI tools, such as LLMs, AI agents, coding assistants, or other AI-based tools, for coding, robotics, simulation, or debugging? If yes, which tools have you used and what have you used them for?
+
+
+Part 2: Current Simulation Workflow Interview
+Script: In this part, I’d like you to walk through how you would create a multi-robot task, from the initial task idea to a runnable and validated simulation or robot workflow. I’m interested in both workload and learning barriers: what takes effort, what requires robotics or simulator expertise, and where interactive support could reduce that burden.
+By “future interactive authoring system,” I mean a workspace that helps users turn a multi-robot task idea into executable artifacts. For example, it might propose robot roles, task steps, object goals, routes, schedules, scene changes, scripts, or validation checks. The user could inspect, edit, approve, or correct these intermediate results before and after running the task.
+Questions:
+A. Choosing and Defining a Multi-Robot Task
+1. Think of a multi-robot task you have built, studied, seen, or would realistically want to simulate. How did this task come up, and what is the task?
+Optional probes: Research question, benchmark, real-world workflow, available robot platforms, teaching/demo need, HRI scenario.
+2. What makes this task worth doing with multiple robots instead of one robot?
+Optional probes: Spatial distribution, parallelism, handoffs, different robot capabilities, sensing vs manipulation, payload limits, time efficiency.
+3. Which parts of setting up or defining this multi-robot task are most complex or cumbersome?
+Optional probes: Many objects, different object goals, objects spread across the scene, multiple rearrangement targets, robot allocation, scheduling, handoffs, shared workspace, route conflicts, synchronization.
+B. Translating Intent into Executable Artifacts
+   4. Once you know what should happen, how do you currently turn that task idea into executable artifacts?
+Optional probes: Scene files, object poses, robot start poses, controller scripts, planner settings, waypoints, task scripts, success checks, deployment settings.
+   5. What parts are easy to describe informally but tedious to encode precisely?
+Optional probes: Object destinations, spatial layouts, keep-out zones, robot assignments, handoff points, route constraints, timing, success conditions.
+   6. If a future interactive system could help with this translation, what would you want it to propose, generate, or configure for you?
+Optional probes: Task plan, scene edits, robot allocation, schedules, handoff structure, routes, control scripts, validation checks, visual preview.
+C. Inspecting and Steering Intermediate Results
+      7. If such a system proposed intermediate results before running the task, what would you want to inspect?
+Optional probes: Task decomposition, robot assignments, object-goal mapping, schedules, handoffs, routes, waypoints, scene changes, controller assumptions, success checks.
+      8. Which of these intermediate results should be editable by the user?
+Optional probes: Reassigning robots, changing object destinations, editing task order, changing handoff points, moving target poses, changing routes, modifying shared-space constraints.
+      9. How would you want to steer or correct these intermediate results before execution?
+Optional probes: Natural language, selecting objects, dragging goals, drawing routes, editing tables/cards, approving/rejecting suggestions, modifying code.
+D. Iteration and Correction
+         10. After the first runnable version, what usually needs to be adjusted?
+Optional probes: Scene layout, object placement, robot placement, routes, timing, task order, robot assignments, controller behavior, success checks.
+         11. How do you normally identify and communicate these corrections?
+Optional probes: Code edits, XML edits, GUI edits, logs, screenshots, sketches, videos, natural language notes, coordinates.
+         12. Which corrections would be easiest to express through language, and which would be easier through visual interaction?
+Optional probes: Selecting objects, drawing routes, moving goals, specifying constraints, explaining preferences, resolving route conflicts, changing handoff timing.
+
+
+Part 3: Prioritization + Reflection, 3 min
+1. What are the top 2-3 moments where a future authoring system would be most useful?
+2. What should it not do without user approval?
+3. What would you need to see to trust or accept its output?
+________________
