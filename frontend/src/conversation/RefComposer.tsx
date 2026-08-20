@@ -23,7 +23,7 @@ export type ComposerPart =
   | { type: "ref"; refId: string };
 
 export type ComposerHandle = {
-  insertToken: (refId: string, label: string, kind: "object" | "position" | "plan_task") => void;
+  insertToken: (refId: string, label: string, kind: "object" | "facility" | "position" | "plan_task") => void;
   focus: () => void;
   clear: () => void;
   submit: () => void;
@@ -120,7 +120,13 @@ export const RefComposer = forwardRef<ComposerHandle, RefComposerProps>(function
         token.className = `ref-token is-${kind}`;
         token.contentEditable = "false";
         token.dataset.refId = refId;
-        token.textContent = kind === "position" ? `📍 ${label}` : kind === "plan_task" ? `▭ ${label}` : label;
+        token.textContent = kind === "position"
+          ? `📍 ${label}`
+          : kind === "facility"
+            ? `◇ ${label}`
+            : kind === "plan_task"
+              ? `▭ ${label}`
+              : label;
 
         const sel = window.getSelection();
         let range = savedRangeRef.current;

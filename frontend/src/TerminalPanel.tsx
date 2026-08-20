@@ -2,9 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
+import { backendUrl } from "./config";
 import { uiTheme } from "./theme";
-
-const backendUrl = import.meta.env.VITE_CODEX_BACKEND_URL || "http://127.0.0.1:8787";
 
 type TerminalEvent = {
   type: "output" | "status" | "error";

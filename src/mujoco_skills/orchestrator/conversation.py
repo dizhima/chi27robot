@@ -273,19 +273,19 @@ def _run_author_stage(
     *,
     provider: Any | None = None,
     manifest: dict | None = None,
-    decomposition_text: str = "Draft ready for your review and compile.",
+    decomposition_text: str | None = "Draft ready for your review and compile.",
 ) -> dict | None:
-    """The Author workflow through its ``decomposition`` progress event.
+    """Run Author and deterministically decompose its semantic result.
 
     Everything ``stream_author_turn`` used to do end to end, minus the final
     ``result``/``message_completed`` pair: validation, ``message_started``/
     ``intent_selected``, the authoring loop's own progress, and the
-    decomposition line. This is a *stage*, not a turn -- both a plain author
-    turn (``stream_author_turn``, below) and a compound turn
+    optional decomposition progress line. This is a *stage*, not a turn --
+    both a plain author turn (``stream_author_turn``, below) and a compound turn
     (``stream_compound_turn``) embed it and decide for themselves how to
     close out the envelope -- including the decomposition line itself, which
     must promise what actually happens next: a review + Compile press on the
-    legacy path, an immediate compile on the compound one.
+    legacy path, or a semantic no-op check before compile on the compound one.
     Never raises: any failure (validation or
     authoring) is converted into a single ``error`` event and this returns
     ``None``; otherwise returns
@@ -358,13 +358,14 @@ def _run_author_stage(
             if result.actions
             else None
         )
-        write_event(
-            {
-                "type": "progress",
-                "stage": "decomposition",
-                "text": decomposition_text,
-            }
-        )
+        if decomposition_text is not None:
+            write_event(
+                {
+                    "type": "progress",
+                    "stage": "decomposition",
+                    "text": decomposition_text,
+                }
+            )
         return {
             "actions": actions,
             "plan": plan,
@@ -992,9 +993,9 @@ def stream_compound_turn(
     time_fn: Any | None = None,
     elapsed_time_fn: Any | None = None,
 ) -> None:
-    """Author (optional) -> Compile -> conditional bounded Resolve -> one
-    ``turn_result``. The compound_turn_integration_spec's tail: one user turn,
-    one live assistant message, at most one committed plan.
+    """Author (optional) -> semantic no-op gate -> Compile -> conditional
+    bounded Resolve -> one terminal result. The compound_turn_integration_spec's
+    tail: one user turn, one live assistant message, at most one committed plan.
 
     ``intent_hint in ("sync", "edit")`` skips the author stage entirely (D1/D3:
     manual edits and the sync button are already structured, not natural
@@ -1003,7 +1004,8 @@ def stream_compound_turn(
     manual-edit tail) takes its plan from ``body["previous_plan"]`` -- the
     SAME already-resolved plan ``"sync"`` uses -- and then applies this
     batch's deltas onto it (D2b). Otherwise the author stage runs exactly as
-    ``stream_author_turn`` does through its ``decomposition`` line.
+    ``stream_author_turn`` does, then exits early when its semantic state is
+    unchanged and the current compiled artifact is still in sync.
 
     D2b (revises D2/item 16): the user edits the RESOLVED plan -- it is the
     only plan D1 ever shows them, so it is also the only plan they could have
@@ -1133,13 +1135,69 @@ def stream_compound_turn(
             manifest=manifest,
             # No review/Compile ceremony exists downstream of Author on this
             # path (integration spec §4.3): the tail compiles immediately.
-            decomposition_text="Plan drafted; compiling.",
+            # The compound path first checks whether Author made any semantic
+            # change.  Do not promise a compile until that gate has passed.
+            decomposition_text=None,
         )
         if stage is None:
             return  # _run_author_stage already emitted the error event
         stages.append("authoring")
         actions, author_message, plan = stage["actions"], stage["message"], stage["plan"]
         authoring_summary = stage["authoring_summary"]
+
+        # A natural-language command can already be fully satisfied by the
+        # committed semantic state.  Compiler verification cannot add any
+        # information in that case: the frontend is already holding the
+        # matching resolved plan + compile artifact.  End the turn before
+        # decompose's fresh plan is adopted (which would discard resolver
+        # artifacts) and before topology/geometry work starts.
+        plan_state = body.get("plan_state") or {}
+        try:
+            comparison_manifest = manifest or _load_manifest()
+            semantic_unchanged = (
+                authoring.parse_actions(
+                    body.get("current_actions") or [], comparison_manifest)
+                == authoring.parse_actions(actions, comparison_manifest)
+            )
+        except Exception:  # noqa: BLE001 - malformed state uses the safe full tail
+            semantic_unchanged = False
+        can_reuse_current_artifact = (
+            semantic_unchanged
+            and not (body.get("edits") or [])
+            and isinstance(body.get("previous_plan"), dict)
+            and isinstance(plan_state, dict)
+            and plan_state.get("in_sync") is True
+            and plan_state.get("dirty") is False
+            and isinstance(plan_state.get("completed_plan"), dict)
+        )
+        if can_reuse_current_artifact:
+            stages.append("no_change")
+            write_event({
+                "type": "progress",
+                "stage": "no_change",
+                "text": "No plan changes were needed.",
+            })
+            write_event({
+                "type": "result",
+                "artifact": {
+                    "kind": "no_change_result",
+                    "turn_id": turn_id,
+                    "base_revision": body.get("base_revision"),
+                    "actions": actions,
+                    "stages": stages,
+                    "author_message": author_message,
+                    "authoring_summary": authoring_summary,
+                    "reason": stage["reason"],
+                },
+            })
+            write_event({"type": "message_completed", "text": author_message})
+            return
+
+        write_event({
+            "type": "progress",
+            "stage": "decomposition",
+            "text": "Plan drafted; compiling.",
+        })
         if plan is None:
             previous_actions = body.get("current_actions") or []
             cleared = bool(previous_actions) and actions == []

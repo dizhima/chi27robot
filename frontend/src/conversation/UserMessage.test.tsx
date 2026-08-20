@@ -13,6 +13,7 @@ describe("UserMessage", () => {
       displayParts: [
         { type: "text", value: "move " },
         { type: "ref", label: "banana_2", kind: "object" },
+        { type: "ref", label: "upper_cabinet", kind: "facility" },
         { type: "text", value: " in " },
         { type: "ref", label: "robot0 · banana_2 → fridge", kind: "plan_task" },
       ],
@@ -24,6 +25,7 @@ describe("UserMessage", () => {
       "is-object",
       "message-ref-token",
     );
+    expect(screen.getByText(/◇ upper_cabinet/)).toHaveClass("is-facility", "message-ref-token");
     expect(screen.getByText(/robot0 · banana_2 → fridge/)).toHaveClass(
       "is-plan_task",
       "message-ref-token",

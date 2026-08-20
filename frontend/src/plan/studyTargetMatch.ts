@@ -1,5 +1,5 @@
 import type { AugmentedAction } from "./authorPlan";
-import type { RobotName } from "./planTypes";
+import type { AuthoredPlan, RobotName } from "./planTypes";
 
 const STUDY_ROBOTS: RobotName[] = ["robot0", "robot1"];
 
@@ -18,18 +18,34 @@ export function studyActionKey(action: AugmentedAction): string {
   ].join("|");
 }
 
-export function studyTaskSequences(actions: AugmentedAction[]): Record<RobotName, string[]> {
-  return Object.fromEntries(
-    STUDY_ROBOTS.map((robot) => [
-      robot,
-      actions.filter((action) => action.robot === robot).map(studyActionKey),
-    ]),
-  ) as Record<RobotName, string[]>;
+export type StudyPlanState = {
+  plan: AuthoredPlan;
+  actions: AugmentedAction[];
+};
+
+/**
+ * Project the realized plan into participant-visible semantic tasks. Plan task
+ * order and assignment are authoritative; semantic actions only identify and
+ * label those tasks, which filters compiler-generated repair groups.
+ */
+export function studyTaskSequences({
+  plan,
+  actions,
+}: StudyPlanState): Record<RobotName, string[]> {
+  const actionById = new Map(actions.map((action) => [action.id, action]));
+  const sequences: Record<RobotName, string[]> = { robot0: [], robot1: [] };
+  for (const task of plan.tasks) {
+    if (!task.task) continue;
+    const action = actionById.get(task.task);
+    if (!action) continue;
+    sequences[task.robot].push(studyActionKey(action));
+  }
+  return sequences;
 }
 
 export function matchesStudyTarget(
-  current: AugmentedAction[],
-  target: AugmentedAction[],
+  current: StudyPlanState,
+  target: StudyPlanState,
 ): boolean {
   const currentSequences = studyTaskSequences(current);
   const targetSequences = studyTaskSequences(target);

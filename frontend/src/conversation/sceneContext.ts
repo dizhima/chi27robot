@@ -26,6 +26,15 @@ export type SceneObjectRef = {
   worldPos: [number, number, number];
 };
 
+/** A semantic facility reference created by double-clicking a facility label.
+ * Unlike a position ref, this deliberately carries no placement coordinates. */
+export type SceneFacilityRef = {
+  kind: "facility";
+  id: string;
+  /** Exact manifest facility name, e.g. "upper_cabinet". */
+  name: string;
+};
+
 export type ScenePositionRef = {
   kind: "position";
   id: string;
@@ -39,7 +48,7 @@ export type ScenePositionRef = {
   bodyName: string;
 };
 
-export type SceneContextRef = SceneObjectRef | ScenePositionRef;
+export type SceneContextRef = SceneObjectRef | SceneFacilityRef | ScenePositionRef;
 
 /** Attribution of a hit body to a manifest entity. */
 export type BodyAttribution =
@@ -114,6 +123,7 @@ export function refFromPick(
 
 /** Short token label (the component adds the 📍 glyph for positions). */
 export function refLabel(ref: SceneContextRef): string {
+  if (ref.kind === "facility") return ref.name;
   if (ref.kind === "object") return ref.name || ref.body || `body ${ref.bodyId}`;
   return ref.onFacility ?? ref.onObject ?? "spot";
 }
@@ -122,6 +132,7 @@ export function refLabel(ref: SceneContextRef): string {
  *  author eventually reads): a manifest name, or a neutral phrase for a
  *  free-floating floor/wall point. */
 export function refText(ref: SceneContextRef): string {
+  if (ref.kind === "facility") return ref.name;
   if (ref.kind === "object") return ref.name || ref.body;
   return ref.onFacility ?? ref.onObject ?? "the marked location";
 }
@@ -147,17 +158,19 @@ export function assignPinHandles(refs: SceneContextRef[]): Map<string, string> {
  *  `handles` (from `assignPinHandles`) adds a `handle` field to bindable
  *  position entries; omitted entirely when no handle applies or none is given. */
 export function serializeRefs(refs: SceneContextRef[], handles?: Map<string, string>): unknown[] {
-  return refs.map((ref) =>
-    ref.kind === "object"
-      ? { kind: "object", name: ref.name, body: ref.body, body_id: ref.bodyId, world_pos: ref.worldPos }
-      : {
-          kind: "position",
-          xyz: ref.xyz,
-          on_facility: ref.onFacility,
-          on_object: ref.onObject,
-          body_id: ref.bodyId,
-          body_name: ref.bodyName,
-          ...(handles?.has(ref.id) ? { handle: handles.get(ref.id) } : {}),
-        },
-  );
+  return refs.map((ref) => {
+    if (ref.kind === "object") {
+      return { kind: "object", name: ref.name, body: ref.body, body_id: ref.bodyId, world_pos: ref.worldPos };
+    }
+    if (ref.kind === "facility") return { kind: "facility", name: ref.name };
+    return {
+      kind: "position",
+      xyz: ref.xyz,
+      on_facility: ref.onFacility,
+      on_object: ref.onObject,
+      body_id: ref.bodyId,
+      body_name: ref.bodyName,
+      ...(handles?.has(ref.id) ? { handle: handles.get(ref.id) } : {}),
+    };
+  });
 }

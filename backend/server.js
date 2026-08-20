@@ -28,6 +28,15 @@ const defaultScenePath = path.join(
 const command = process.env.CODEX_COMMAND || "codex";
 const host = process.env.CODEX_BACKEND_HOST || "127.0.0.1";
 const port = Number(process.env.CODEX_BACKEND_PORT || 8787);
+
+function childServiceBindHost(envName) {
+  const explicit = process.env[envName];
+  if (explicit) return explicit;
+  return host === "0.0.0.0" ? "0.0.0.0" : "127.0.0.1";
+}
+
+const skillServiceHost = childServiceBindHost("SKILL_SERVICE_HOST");
+const orchestratorHost = childServiceBindHost("ORCHESTRATOR_HOST");
 const wasmMujocoVersion = process.env.MUJOCO_WASM_VERSION || "3.10.0";
 const compileMjbScript = path.join(__dirname, "compile_scene_mjb.py");
 const resolvedCommand = resolveCommand(command);
@@ -197,13 +206,14 @@ function startSkillService() {
   }
   skillLastStart = Date.now();
   console.log(
-    `Starting skill_service (mujoco ${wasmMujocoVersion}) on http://127.0.0.1:${skillServicePort} ...`,
+    `Starting skill_service (mujoco ${wasmMujocoVersion}) on http://${skillServiceHost}:${skillServicePort} ...`,
   );
   const args = ["run", "--with", `mujoco==${wasmMujocoVersion}`, "python", "-m", skillServiceModule];
   const proc = spawn("uv", args, {
     cwd: workspace,
     env: sceneServiceEnvironment({
       SKILL_SERVICE_PORT: String(skillServicePort),
+      SKILL_SERVICE_HOST: skillServiceHost,
     }),
     windowsHide: true,
   });
@@ -275,11 +285,12 @@ function startOrchestratorService() {
     return;
   }
   orchestratorLastStart = Date.now();
-  console.log(`Starting orchestrator on http://127.0.0.1:${orchestratorPort} ...`);
+  console.log(`Starting orchestrator on http://${orchestratorHost}:${orchestratorPort} ...`);
   const proc = spawn("uv", ["run", "python", "-m", orchestratorModule], {
     cwd: workspace,
     env: sceneServiceEnvironment({
       ORCHESTRATOR_PORT: String(orchestratorPort),
+      ORCHESTRATOR_HOST: orchestratorHost,
       SKILL_SERVICE_URL:
         process.env.SKILL_SERVICE_URL || `http://127.0.0.1:${skillServicePort}`,
     }),

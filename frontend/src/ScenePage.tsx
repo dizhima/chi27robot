@@ -17,7 +17,7 @@ import { GanttPanel } from "./plan/GanttPanel";
 import { PlanOverlay, type StepMarker } from "./plan/PlanOverlay";
 import { PlanTaskSubtitles } from "./plan/PlanTaskSubtitles";
 import { RobotIdentityLabels } from "./RobotIdentityLabels";
-import { SceneEntityLabels } from "./SceneEntityLabels";
+import { SceneEntityLabels, type SceneEntityLabelPick } from "./SceneEntityLabels";
 import { ReadyPoseController } from "./ReadyPoseController";
 import {
   canEnterExplore,
@@ -142,6 +142,7 @@ type VersionCommitInfo = {
 
 type StudyTarget = {
   id: string;
+  plan: AuthoredPlan;
   actions: AugmentedAction[];
 };
 
@@ -332,9 +333,13 @@ export default function ScenePage() {
   const [semanticActions, setSemanticActions] = useState<AugmentedAction[]>([]);
   const targetMatched = useMemo(
     () => studyTarget !== null
+      && livePlan !== null
       && !dirty
-      && matchesStudyTarget(semanticActions, studyTarget.actions),
-    [dirty, semanticActions, studyTarget],
+      && matchesStudyTarget(
+        { plan: livePlan, actions: semanticActions },
+        { plan: studyTarget.plan, actions: studyTarget.actions },
+      ),
+    [dirty, livePlan, semanticActions, studyTarget],
   );
   // Inline Cursor-style scene references attached to the next turn: an object
   // (double-click a body) is an object ref (highlight only); a surface/floor
@@ -878,7 +883,11 @@ export default function ScenePage() {
     setTargetError(null);
     try {
       const checkpoint = await loadStudyCheckpoint(checkpointId);
-      setStudyTarget({ id: checkpoint.id, actions: checkpoint.snapshot.semanticActions });
+      setStudyTarget({
+        id: checkpoint.id,
+        plan: checkpoint.snapshot.plan,
+        actions: checkpoint.snapshot.semanticActions,
+      });
     } catch (error) {
       setTargetError(
         `Target load failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -1015,6 +1024,28 @@ export default function ScenePage() {
       // Absent-actions means this turn skipped Author; the source tag keeps
       // that distinction in both the visible chat and the version snapshot.
       finalizeMessage(assistantId, finalMessagePatch);
+    } else if (outcome.kind === "no_change_result") {
+      // This response was verified against the revision sent with the turn,
+      // but intentionally carries no replacement artifact.  Keep the live
+      // plan, compile, revision, and history exactly as they are.
+      if (
+        outcome.baseRevision !== undefined
+        && outcome.baseRevision !== baseRevisionRef.current
+      ) {
+        finalizeMessage(assistantId, {
+          status: "done",
+          source: "authoring",
+          content: `${outcome.message}\n\n(Discarded — a newer change already applied.)`,
+        });
+        return;
+      }
+      editEpisodeRef.current = null;
+      finalizeMessage(assistantId, {
+        status: "done",
+        source: "authoring",
+        content: outcome.authorMessage ?? outcome.message,
+        details: outcome.authoringSummary || undefined,
+      });
     } else if (outcome.kind === "answer") {
       finalizeMessage(assistantId, { status: "done", source: "explain", content: outcome.content });
     } else {
@@ -1083,6 +1114,26 @@ export default function ScenePage() {
     composerRef.current?.focus();
   }, []);
 
+  // Labels are semantic references: unlike a surface pick, a facility label
+  // adds only its exact manifest name and therefore never creates a place pin.
+  const handleEntityLabelPick = useCallback((pick: SceneEntityLabelPick) => {
+    const id = crypto.randomUUID();
+    const ref: SceneContextRef = pick.kind === "facility"
+      ? { kind: "facility", id, name: pick.name }
+      : {
+          kind: "object",
+          id,
+          name: pick.name,
+          body: pick.bodyName,
+          bodyId: pick.bodyId,
+          worldPos: pick.worldPos,
+        };
+    setContextRefs((refs) => [...refs, ref]);
+    if (pick.kind === "object") setSelectedBodyId(pick.bodyId);
+    composerRef.current?.insertToken(id, refLabel(ref), ref.kind);
+    composerRef.current?.focus();
+  }, []);
+
   // The composer is the source of truth for which tokens still exist; prune refs
   // a backspace/cut removed, preserving order.
   const handleRefsPresent = useCallback((ids: string[]) => {
@@ -1105,6 +1156,15 @@ export default function ScenePage() {
     (refId: string) => {
       const ref = contextRefs.find((r) => r.id === refId);
       if (ref?.kind === "object") setSelectedBodyId(ref.bodyId);
+      if (ref?.kind === "facility") {
+        const facility = manifest?.facilities?.[ref.name];
+        const bodyName = facility?.body ?? facility?.place?.surface_body;
+        const api = apiRef.current;
+        if (typeof bodyName === "string" && api) {
+          const body = api.getBodies().find((candidate) => candidate.name === bodyName);
+          if (body) setSelectedBodyId(body.id);
+        }
+      }
       const planRef = planRefs.find((r) => r.id === refId);
       if (planRef && draftPlan) {
         const task = draftPlan.tasks.find((candidate) => candidate.task === planRef.actionId);
@@ -1112,7 +1172,7 @@ export default function ScenePage() {
         if (stepId) setSelectedStepId(stepId);
       }
     },
-    [contextRefs, planRefs, draftPlan],
+    [contextRefs, planRefs, draftPlan, manifest],
   );
 
   const handlePlanReferenceBar = useCallback(
@@ -1805,8 +1865,13 @@ export default function ScenePage() {
               <SelectionHighlight bodyId={selectedBodyId} />
               <ScenePickController bodyIndex={bodyIndex} enabled={pickMode} onPick={handleScenePick} />
               <RobotIdentityLabels />
-              {planSubtitlesEnabled && manifest ? (
-                <SceneEntityLabels manifest={manifest} showObjects={SHOW_SCENE_OBJECT_LABELS} />
+              {(planSubtitlesEnabled || pickMode) && manifest ? (
+                <SceneEntityLabels
+                  manifest={manifest}
+                  showObjects={SHOW_SCENE_OBJECT_LABELS}
+                  pickEnabled={pickMode}
+                  onLabelPick={handleEntityLabelPick}
+                />
               ) : null}
               <ReadyPoseController enabled={exploreToolsEnabled} captureRevision={readyPoseRevision} />
               {exploreToolsEnabled ? <DragInteraction /> : null}
@@ -1983,7 +2048,7 @@ export default function ScenePage() {
                     className={`composer-icon-btn pin${pickMode ? " is-active" : ""}`}
                     aria-pressed={pickMode}
                     aria-label="Pick a scene reference"
-                    title="Pick a scene reference: double-click an object or a spot in the scene"
+                    title="Pick a scene reference: double-click a label, object, or spot in the scene"
                     onClick={() => {
                       setPickMode((enabled) => {
                         const next = !enabled;

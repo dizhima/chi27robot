@@ -5,7 +5,7 @@
 
 We conducted a two-phase user study to investigate how structured plan context supports users in revising an evolving multi-robot plan.
 The two phases correspond to two intent regimes.
-In the first phase, participants knew exactly what outcome they wanted: given a target execution shown as a captioned video, they had to revise the current plan to reproduce it, and we evaluate \oursystem{} against a baseline without plan context.
+In the first phase, participants knew exactly what outcome they wanted: given a target execution shown as a captioned video, they had to revise the current plan to reproduce it, and we evaluate \oursystem{} against a baseline without structured plan context.
 In the second phase, participants had no fixed outcome in mind: they used the full system to explore and adjust a plan to their own preferences, and we evaluate overall usability and user experience.
 The study lasted around 80 minutes and was approved by our organization's internal review board.
 
@@ -20,13 +20,16 @@ Participants received \$50 after the study.
 
 We compared two methods that shared the same underlying language model, planning pipeline, coordination mechanisms, simulated environment, and execution capabilities.
 The conditions differed in whether the current multi-robot plan was exposed as structured interaction context.
-Both conditions ran on the same interface: participants could replay the simulated execution of the current plan at any time, and the baseline differed only in that the Gantt timeline and task-reference functionality were hidden.
+Both conditions ran on the same interface, and participants could replay the simulated execution of the current plan at any time.
+In our condition, the current plan's task assignments and ordering were exposed through the interactive Gantt timeline; in the baseline, the timeline and task-reference functionality were hidden, and the same task-level information was instead conveyed through a concise example prompt.
 
 \paragraph{Autonomous Planning Baseline.}
 
 The baseline used the same underlying planning and execution pipeline as our system, but hid the Gantt timeline visualization and plan-reference functionality.
+At the beginning of each round, participants received a study-authored example prompt that concisely described the current plan's per-robot tasks and ordering.
+This prompt conveyed the same task-level assignment and ordering information available in our Gantt visualization, allowing baseline participants to understand the current plan without having to reconstruct it solely from the execution replay.
 Each planning request was treated as a self-contained task specification, and the previously generated plan was not provided to the language model as structured context for subsequent requests.
-Consequently, when participants wanted to revise an existing plan, they needed to describe a complete revised task specification that encoded both the requested change and the existing task decisions that should be preserved.
+Participants could use the example prompt as a starting point, but when revising the plan they still needed to provide a complete revised task specification that encoded both the requested change and the existing task decisions that should be preserved.
 The system then autonomously generated a new multi-robot plan from this revised specification.
 Participants could observe the resulting execution in the simulated environment, but could not directly inspect or refer to individual tasks in the previously generated plan.
 
@@ -82,7 +85,8 @@ We designed two household scenarios (\autoref{fig:phase1setup}), each comprising
 Each round specified the desired resulting plan, while participants could decide how to realize the revision.
 Each target differed from the current plan through a controlled combination of one or two newly introduced object-manipulation tasks and changes to task ordering or robot assignment.
 The initial and canonical target plans were generated in advance using the same planning pipeline and saved for use across study sessions.
-At the beginning of each scenario, only the initial plan was loaded into the assigned interface; the underlying prompts used to generate the saved plans were never shown to participants.
+At the beginning of each scenario, the initial plan was loaded into the assigned interface.
+The original prompts used to generate the saved plans were never shown to participants; instead, in the baseline condition, participants received standardized study-authored example prompts that summarized the current plans at the same task-assignment and ordering level exposed by the Gantt visualization in our condition.
 Participants played the initial plan once in the simulator to familiarize themselves with its execution and could replay the current plan through the interface as needed.
 
 In each round, participants viewed a separate video of the target plan's execution and revised the current plan until it reproduced that target.
@@ -193,17 +197,16 @@ The full initial and target plan specifications appear in \autoref{app:revision-
 % "Did not use" option so participants do not rate features they did not try):
 %
 % Conversational editing with grounded references:
-% 1. I could use language to express the task changes I intended.
-% 2. Selecting objects, locations, or plan tasks as references made it easier to express
-%    what I meant.
+% 1. Using language together with selected objects, locations, or plan-task references made
+%    it easy to express the task changes I intended.
 %
 % Direct manipulation of the timeline:
-% 3. The timeline made it easy to understand task assignments and ordering.
-% 4. Dragging tasks on the timeline made it easy to reorder or reassign them.
+% 2. The timeline made it easy to understand task assignments and ordering.
+% 3. Dragging tasks on the timeline made it easy to reorder or reassign them.
 %
 % Direct manipulation in the scene:
-% 5. The scene controls made it easy to adjust robot routes.
-% 6. The scene controls made it easy to adjust object placements.
+% 4. The scene controls made it easy to adjust robot routes.
+% 5. The scene controls made it easy to adjust object placements.
 %
 % - Think-aloud + interview themes: which revisions users prefer to say vs. drag, and why;
 %   do NOT frame interview questions as baseline comparisons (demand characteristics).

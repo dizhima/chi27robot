@@ -10,6 +10,7 @@ export type ObjectLabelAnchor = {
   name: string;
   text: string;
   bodyId: number;
+  bodyName: string;
 };
 
 export type FacilityLabelAnchor = {
@@ -47,7 +48,9 @@ export function discoverSceneEntityLabelAnchors(
         ? (availableBodyIds.has(spec.body) ? spec.body : undefined)
         : (spec.body ? bodyIdsByName.get(spec.body) : undefined);
       if (bodyId === undefined) continue;
-      anchors.push({ kind: "object", name, text: readableObjectName(name), bodyId });
+      const bodyName = bodies.find((body) => body.id === bodyId)?.name;
+      if (!bodyName) continue;
+      anchors.push({ kind: "object", name, text: readableObjectName(name), bodyId, bodyName });
     }
   }
 

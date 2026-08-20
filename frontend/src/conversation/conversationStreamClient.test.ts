@@ -165,6 +165,47 @@ describe("streamConversationTurn", () => {
     });
   });
 
+  it("maps a semantic no-op without requiring a replacement plan or compile", async () => {
+    const lines: StreamEvent[] = [
+      { type: "message_started", turn_id: "turn-1", seq: 1 },
+      {
+        type: "result",
+        turn_id: "turn-1",
+        seq: 2,
+        artifact: {
+          kind: "no_change_result",
+          base_revision: 4,
+          author_message: "Both mugs are already scheduled for the sink.",
+          authoring_summary: "No semantic actions changed.",
+          reason: null,
+        },
+      },
+      {
+        type: "message_completed",
+        turn_id: "turn-1",
+        seq: 3,
+        text: "Both mugs are already scheduled for the sink.",
+      },
+    ];
+    mockFetchWithStream(
+      streamFromChunks(lines.map((event) => `${JSON.stringify(event)}\n`)),
+    );
+
+    const outcome = await streamConversationTurn(
+      { ...baseArgs, intentHint: null, baseRevision: 4 },
+      () => {},
+    );
+
+    expect(outcome).toEqual({
+      kind: "no_change_result",
+      baseRevision: 4,
+      authorMessage: "Both mugs are already scheduled for the sink.",
+      authoringSummary: "No semantic actions changed.",
+      reason: null,
+      message: "Both mugs are already scheduled for the sink.",
+    });
+  });
+
   it("builds the unified request body: plan_state, messages filter, current_actions, and posts to /conversation/stream", async () => {
     const fetchMock = mockFetchWithStream(streamFromChunks(eventLines()));
     const messages: ConversationMessage[] = [

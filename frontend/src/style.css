@@ -154,7 +154,7 @@ canvas {
 }
 
 .chat-rail-message.is-user p {
-  background: rgba(94, 176, 138, 0.16);
+  background: rgba(255, 255, 255, 0.09);
 }
 
 /* Assistant output flows as plain text (no bubble), Claude-Code style. */
@@ -360,6 +360,12 @@ canvas {
   font-variant-numeric: tabular-nums;
 }
 
+.ref-token.is-facility {
+  border-color: rgba(224, 179, 65, 0.6);
+  background: rgba(224, 179, 65, 0.18);
+  color: #fff6df;
+}
+
 .ref-token.is-plan_task {
   border-color: rgba(94, 176, 138, 0.72);
   background: rgba(94, 176, 138, 0.18);
@@ -437,12 +443,12 @@ canvas {
 
 /* enter/return send */
 .composer-icon-btn.send {
-  background: #5eb08a;
-  color: #04120b;
+  background: #111315;
+  color: #ffffff;
 }
 
 .composer-icon-btn.send:hover {
-  background: #6cc79b;
+  background: #000000;
 }
 
 .composer-icon-btn.send:disabled {
@@ -1200,6 +1206,16 @@ canvas {
 .scene-entity-label.is-facility {
   border-color: rgba(250, 204, 21, 0.72);
   color: #fef3c7;
+}
+
+.scene-entity-label.is-pickable {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.scene-entity-label.is-pickable:hover {
+  filter: brightness(1.2);
+  box-shadow: 0 0 0 2px rgba(94, 176, 138, 0.45), 0 3px 10px rgba(0, 0, 0, 0.3);
 }
 
 .status-panel {
@@ -2225,7 +2241,10 @@ html[data-ui-theme="light"] .debug-pin-row {
   background: #f0f4f1;
 }
 
-html[data-ui-theme="light"] .chat-rail-message.is-user p,
+html[data-ui-theme="light"] .chat-rail-message.is-user p {
+  background: #eceeed;
+}
+
 html[data-ui-theme="light"] .authoring-chat-message.is-user {
   background: var(--ui-accent-soft);
 }
@@ -2290,6 +2309,7 @@ html[data-ui-theme="light"] .ref-token.is-plan_task {
 }
 
 html[data-ui-theme="light"] .ref-token.is-position,
+html[data-ui-theme="light"] .ref-token.is-facility,
 html[data-ui-theme="light"] .ref-token.message-ref-chip.is-facility {
   background: #fff4d8;
   color: #75510a;
@@ -2316,14 +2336,23 @@ html[data-ui-theme="light"] .composer-icon-btn.pin.is-active {
   color: #75510a;
 }
 
-html[data-ui-theme="light"] .composer-icon-btn.send,
+html[data-ui-theme="light"] .composer-icon-btn.send {
+  border-color: #111315;
+  background: #111315;
+  color: #ffffff;
+}
+
 html[data-ui-theme="light"] .authoring-workspace .authoring-primary {
   border-color: var(--ui-accent);
   background: var(--ui-accent);
   color: #ffffff;
 }
 
-html[data-ui-theme="light"] .composer-icon-btn.send:hover,
+html[data-ui-theme="light"] .composer-icon-btn.send:hover {
+  background: #000000;
+  color: #ffffff;
+}
+
 html[data-ui-theme="light"] .authoring-workspace .authoring-primary:hover {
   background: #276b4a;
   color: #ffffff;

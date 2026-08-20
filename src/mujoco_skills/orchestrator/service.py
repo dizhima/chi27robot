@@ -49,6 +49,7 @@ RUNTIME = scene_runtime_from_env(
 PUBLIC = RUNTIME.public
 MANIFEST = RUNTIME.manifest
 PORT = int(os.environ.get("ORCHESTRATOR_PORT", 8900))
+HOST = os.environ.get("ORCHESTRATOR_HOST", "127.0.0.1")
 SKILL_SERVICE_URL = os.environ.get("SKILL_SERVICE_URL", "http://127.0.0.1:8899")
 COMPILE_TIMEOUT_SECONDS = float(os.environ.get("RESOLVER_COMPILE_TIMEOUT", "600"))
 RESOLVER_VERSION = os.environ.get("RESOLVER_VERSION", "v2").lower()
@@ -724,8 +725,8 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     # Fail fast on a missing/invalid manifest before announcing readiness.
     load_manifest()
-    print(f"[orchestrator] listening on http://127.0.0.1:{PORT}")
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    print(f"[orchestrator] listening on http://{HOST}:{PORT}")
+    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 
 
 if __name__ == "__main__":

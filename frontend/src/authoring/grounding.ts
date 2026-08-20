@@ -1,4 +1,4 @@
-import { backendUrl } from "../config";
+import { backendUrl, orchestratorUrl } from "../config";
 import type {
   ObjectGoalTask,
   PendingGround,
@@ -6,9 +6,6 @@ import type {
   SceneManifest,
   SemanticTask,
 } from "./types";
-
-export const orchestratorUrl =
-  import.meta.env.VITE_ORCHESTRATOR_URL || "http://127.0.0.1:8900";
 
 export function uiRobotToBackend(robot: RobotId): "robot0" | "robot1" {
   return robot === "robot_a" ? "robot0" : "robot1";

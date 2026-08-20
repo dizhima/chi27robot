@@ -353,6 +353,68 @@ Use four verification layers rather than treating “XML compiles” as success:
 | **layout024_sorting** (style 45, manually adjusted) | COMPLETE: style 45 deliberately matches OpenFridge ep88's `Refrigerator040`; style 46 / `Refrigerator059` was rejected because its `freezer_door` and `fridge_door` physical sides are swapped relative to ep88, making the arm pull one side while the other door opens. Eight objects are retained (bowl×2 at the counter pins, cup_4×2, orange fork_1×2, avocado_1×2); bowls use 0.6 scale. The two avocados replace boxed food and jam while preserving those slots' XY positions and using the original avocado asset's stable support height/orientation. `fork_1` replaced gray `fork_3`, which visually merged with the white island countertop; both fork positions are preserved, but only the first fork body is rotated 180° around world Z to reverse tine direction. Sorting semantics are bowl -> initially-open `cabinet`, cup/fork -> `drawer`, and avocado -> `fridge`; Refrigerator040 uses upper fridge shelf `fridge_right_group_g10`, whose physical support geom belongs to the semantic interior body's ancestor fixture. Fixed world-space default placement slots are hand-pinned in the scene table: cabinet has four slots across its lower and level1 shelves, fridge has two, and sink has two. `cab_1_main_group` starts open; native robot0 CloseCabinet ep65 is mount-retargeted to robot1 with its world-space base/arm path preserved, so explicitly locked robot1 close commands are supported. OpenDrawer ep69 is paired with its strict reverse; OpenFridge ep88 is paired with its strict reverse. Formal XML/MJB (`nq=170`, baked `study_init`), raw replays, canonical tracks, 12-target standoffs and schema-v2 manifest (8 objects, 6 facilities, 5 canonical skills) are synchronized. Representative bowl/cabinet, cup/sink, and avocado/fridge plans compile to the hand-pinned first slots with zero conflicts or warnings. Archives: `layout024_sorting_pre_style45_20260817/`, `layout024_sorting_pre_fork1_20260817/`, `layout024_sorting_pre_fork_flip_20260818/`, and `layout024_sorting_pre_avocado_restore_20260818/`. |
 | **layout024_study** (legacy style 46, seed 7) / **layout038_study** (style 58) | Baseline exports with 9-object sets and stripped outer walls. `layout024_study` is no longer the formal 024 sorting scene; use `layout024_sorting` style 45. Full replay availability remains documented in **§10**. |
 
+`layout024_sorting` update (2026-08-19), superseding the avocado inventory in
+the table above: `avocado_1` / `avocado_2` were replaced by two instances of
+038 preparing's verified `objaverse/spoon/spoon_11` asset, named `spoon_1` /
+`spoon_2`. They preserve the former avocado XY slots and use body Z `0.9307`,
+which leaves them flat with no initial island contact. The island drawer now
+starts open in both `study_init` (slide joint `-0.4623974073`) and manifest
+state. An initially-open container no longer requires a redundant OpenDrawer
+dependency; the two-spoon-to-drawer plan compiles without OpenDrawer and ends
+with one CloseDrawer, zero conflicts, and zero warnings. Formal XML/MJB, source
+objects YAML, raw replays, canonical tracks, standoffs, navgrid, and manifest
+were synchronized. The previous artifacts are archived under
+`layout024_sorting_pre_spoon_drawer_open_20260819/`.
+
+`layout024_sorting` drawer robot coverage update (2026-08-19): the native
+robot0 `OpenDrawer` track and its strict-reverse `CloseDrawer` track are
+mount-retargeted to robot1 while preserving their world-space base and arm
+paths. The manifest therefore registers both drawer operations for robot0 and
+robot1.
+
+`layout024_sorting` fork initial-height correction (2026-08-18): both `fork_1`
+instances now use body Z `0.9306938`. Their visual mesh minimum is
+`0.9205000`, leaving 0.5 mm clearance above the island surface at Z `0.92`;
+the XML and compiled MJB `study_init` agree and report no initial fork/island
+contacts. The prior XML/MJB/build metadata are archived under
+`layout024_sorting_pre_fork_height_20260818/`.
+
+`layout024_sorting` bowls retain the default top-down grip. A horizontal-grip
+experiment could pick them from their 0.75 m counter standoffs, but the carried
+orientation made the subsequent cabinet reach-in fail IK/collision planning;
+the horizontal override and its `[0, 0, 0.015]` offset were therefore removed.
+
+`layout024_sorting` cups retain the default top-down grip. A horizontal-grip
+diagnostic can pick either cup, but cabinet reach-in fails during the
+horizontal insertion (`eef` IK residual 0.0637 m, followed by no
+collision-free fallback solution). The cabinet-wide `release_clearance` is
+0.02: the previous 0.08 value raised a lower-shelf cup target to about Z 1.5724
+and made robot0 link7 contact the level1 shelf. With 0.02, both default-grip
+cups compile end to end into their object-specific lower pins, including
+CloseCabinet, with zero conflicts or warnings.
+
+The lower cup pins are deep enough that the default-grip wrist can collide with
+the level1 shelf late in the straight horizontal insertion. The cabinet enables
+`nearby_rrt_fallback`: it retains the collision-free Cartesian prefix and tries
+nearby IK seeds before the global random fallback. On the fixed `cup_1` pin this
+reduced the fallback from 1,858 RRT iterations / 7,322 collision checks / 31.74 s
+to 4 iterations / 216 checks / 1.74 s without moving the pin; `cup_2` uses 3
+iterations and remains upright. Keep this override cabinet-specific so other
+scenes preserve their established deterministic fallback trajectories.
+
+Cabinet destinations are object-specific, not generic ordered slots:
+`bowl_1` / `bowl_2` are bound to the two level1 upper-shelf pins and `cup_1` /
+`cup_2` to the two main-body lower-shelf pins. This binding uses
+`object_slot_points`, so separate “move bowls” and “move cups” requests cannot
+both restart at slot zero.
+
+Reach-in placement now applies the same release-time upright correction as
+surface placement: during the final gripper-open segment, roll/pitch is removed
+relative to the object's initial resting orientation while the motion-selected
+yaw is retained. The generated reach-in track reports `object_up_alignment`;
+both the two-cup lower-shelf case and two-bowl upper-shelf case report exactly
+`1.0`, with zero conflicts or warnings.
+
 Study design (docs/paper draft/user_study.tex): the two active scenarios are
 Kitchen Island Sorting and Breakfast Preparation; their formal scenes are
 `layout042_sorting` and `layout012_preparing`, respectively.

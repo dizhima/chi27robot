@@ -63,6 +63,20 @@ export type TurnResultArtifact = {
   resolve_warning?: string;
 };
 
+/** Author verified that the requested semantic state already matches the
+ * committed one.  The frontend keeps its current plan/compile artifact and
+ * only completes the conversation message. */
+export type NoChangeResultArtifact = {
+  kind: "no_change_result";
+  turn_id?: string;
+  base_revision?: number;
+  actions?: unknown[];
+  stages?: string[];
+  author_message?: string;
+  authoring_summary?: string;
+  reason?: string | null;
+};
+
 export type AnswerArtifact = {
   kind: "answer";
   turn_id?: string;
@@ -86,7 +100,12 @@ export type StreamEvent = {
   stage?: string;
   text?: string;
   details?: unknown;
-  artifact?: AuthorResultArtifact | ResolveResultArtifact | TurnResultArtifact | AnswerArtifact;
+  artifact?:
+    | AuthorResultArtifact
+    | ResolveResultArtifact
+    | TurnResultArtifact
+    | NoChangeResultArtifact
+    | AnswerArtifact;
 };
 
 async function readNdjsonStream(
@@ -249,6 +268,17 @@ export async function streamConversationTurn(
         resolveSummary: a.resolve_summary,
         resolveWarning: a.resolve_warning,
         message: lastMessageCompletedText ?? "Plan updated.",
+      };
+    }
+    case "no_change_result": {
+      const a = artifact as NoChangeResultArtifact;
+      return {
+        kind: "no_change_result",
+        baseRevision: a.base_revision,
+        authorMessage: a.author_message,
+        authoringSummary: a.authoring_summary,
+        reason: a.reason ?? null,
+        message: lastMessageCompletedText ?? a.author_message ?? "No plan changes were needed.",
       };
     }
     case "answer": {

@@ -23,7 +23,7 @@ export type UserMessageDisplayPart =
   | {
       type: "ref";
       label: string;
-      kind: "object" | "position" | "plan_task";
+      kind: "object" | "facility" | "position" | "plan_task";
     };
 
 /** Unified message model. Superset of the old ChatMessage (role/content/source
@@ -135,6 +135,16 @@ export type TurnOutcome =
       authoringSummary?: string;
       resolveSummary?: string;
       resolveWarning?: string;
+      message: string;
+    }
+  | {
+      /** Author returned the same semantic state and the backend deliberately
+       * skipped decompose adoption, Compile, Resolve, and plan versioning. */
+      kind: "no_change_result";
+      baseRevision?: number;
+      authorMessage?: string;
+      authoringSummary?: string;
+      reason: string | null;
       message: string;
     }
   | { kind: "answer"; content: string; intent: Intent } // non-mutating (precondition/explain)

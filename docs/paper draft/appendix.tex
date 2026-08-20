@@ -1,6 +1,8 @@
 % Appendix: initial and target plan specifications for the Phase-1 target-matching rounds.
 % Referenced from user_study.tex as \autoref{app:revision-scripts}.
-% Participants never see these listings: each round's target is presented ONLY as a
+% Participants never see the structured plan listings below. In the baseline condition,
+% they do see the corresponding study-authored example prompt for the current plan.
+% Each round's target is presented ONLY as a
 % captioned execution video (captions = each robot's current task; when a robot is idle,
 % the reason it is waiting). The video can be re-watched and scrubbed at any time and is
 % identical across conditions. Robots are referred to as "robot 0" and "robot 1" in all
@@ -16,6 +18,11 @@
     \item robot0: open fridge --- lemon\_1 $\rightarrow$ fridge --- lemon\_2 $\rightarrow$ fridge --- apple\_1 $\rightarrow$ fridge --- close fridge
     \item robot1: mug\_1 $\rightarrow$ sink --- mug\_2 $\rightarrow$ sink
 \end{itemize}
+\paragraph{Baseline example prompt.}
+\begin{quote}\small\ttfamily
+Let robot 0 put lemon 1\&2 and apple 1 to the fridge and close the fridge\\
+Let robot 1 move the mug 1 and mug 2 to the sink
+\end{quote}
 
 \paragraph{Round 1 target.}
 \begin{itemize}
@@ -24,6 +31,11 @@
 \end{itemize}
 Compared with the initial plan, robot1 stores apple\_1 and the newly introduced apple\_2 before handling the mugs, while robot0 remains responsible for the lemons.
 Robot1's fridge access requires the door robot0 opens and closes; the system defers robot0's close-fridge until robot1's apples are placed.
+\paragraph{Baseline example prompt.}
+\begin{quote}\small\ttfamily
+Let robot 0 put lemon 1\&2 in the fridge and close the fridge\\
+Let robot 1 put apple 1\&2 in the fridge first, then move mug 1 and mug 2 to the sink
+\end{quote}
 
 \paragraph{Round 2 target.}
 \begin{itemize}
@@ -40,6 +52,11 @@ Robot0 stores the two lemons and closes the refrigerator before completing two n
     \item robot0: milk $\rightarrow$ island --- close fridge --- spoon\_1 $\rightarrow$ island --- spoon\_2 $\rightarrow$ island
     \item robot1: bowl\_1 $\rightarrow$ island --- bowl\_2 $\rightarrow$ island
 \end{itemize}
+\paragraph{Baseline example prompt.}
+\begin{quote}\small\ttfamily
+Let robot 0 move the milk to the island, close the fridge, then move spoon 1\&2 to the island\\
+Let robot 1 move bowl 1 and bowl 2 to the island
+\end{quote}
 
 \paragraph{Round 1 target.}
 \begin{itemize}
@@ -47,6 +64,11 @@ Robot0 stores the two lemons and closes the refrigerator before completing two n
     \item robot1: \underline{orange\_1 $\rightarrow$ island} --- bowl\_1 $\rightarrow$ island --- bowl\_2 $\rightarrow$ island
 \end{itemize}
 Compared with the initial plan, robot0 adds a cereal-retrieval task after completing its existing milk and spoon tasks, while robot1 begins by retrieving the newly introduced orange before continuing with the bowls.
+\paragraph{Baseline example prompt.}
+\begin{quote}\small\ttfamily
+Let robot 0 move the milk to the island, close the fridge, then move spoon 1\&2 to the island, and finally move the cereal from the cabinet to the island and close the cabinet\\
+Let robot 1 move orange 1 to the island first, then move bowl 1 and bowl 2 to the island
+\end{quote}
 
 \paragraph{Round 2 target.}
 \begin{itemize}

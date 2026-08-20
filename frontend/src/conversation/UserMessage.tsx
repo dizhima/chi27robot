@@ -18,7 +18,7 @@ export function UserMessage({ message }: UserMessageProps) {
                   className={`ref-token is-${part.kind} message-ref-token`}
                   key={`${part.kind}-${part.label}-${index}`}
                 >
-                  {part.kind === "position" ? "📍 " : part.kind === "plan_task" ? "▭ " : ""}
+                  {part.kind === "position" ? "📍 " : part.kind === "facility" ? "◇ " : part.kind === "plan_task" ? "▭ " : ""}
                   {part.label}
                 </span>
               ),

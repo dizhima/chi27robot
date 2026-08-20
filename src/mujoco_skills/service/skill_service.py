@@ -57,6 +57,7 @@ TRACKS = RUNTIME.tracks
 STANDOFFS = RUNTIME.standoffs
 MANIFEST = RUNTIME.manifest
 PORT = int(os.environ.get("SKILL_SERVICE_PORT", 8899))
+HOST = os.environ.get("SKILL_SERVICE_HOST", "127.0.0.1")
 SNAPSHOT_TTL_SECONDS = float(os.environ.get("COMPILE_SNAPSHOT_TTL", "300"))
 SNAPSHOT_MAX_ENTRIES = int(os.environ.get("COMPILE_SNAPSHOT_MAX", "32"))
 GENERATED_TRACK_NAMESPACE_LENGTH = 32
@@ -574,5 +575,5 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     _warm()
-    print(f"[skill_service] listening on http://127.0.0.1:{PORT}")
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    print(f"[skill_service] listening on http://{HOST}:{PORT}")
+    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

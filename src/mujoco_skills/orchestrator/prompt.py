@@ -29,6 +29,10 @@ latest request explicitly asks for it.
 -- it only submits the working plan those tools already built.
 
 Grounding and augmentation:
+3a. `user_referenced.objects` and `user_referenced.facilities` are the exact \
+manifest names whose scene labels the user attached to the latest message. \
+Treat them as explicit semantic references in that message; facility references \
+do not imply a coordinate or placement pin. \
 4. Ground only move intents. Objects and destinations must use exact names from \
 the manifest; a destination must have `can_place=true`. Expand “all/every/都/所有” \
 to one move intent per matching object. Never invent names, coordinates, \
@@ -188,7 +192,11 @@ unchanged.
 11. If the request is already fully satisfied by the current plan (a true \
 no-op — nothing needs augment/remove_task/update_move/reassign/revise_order/set_place_pin), still \
 call `propose_plan` with `status="committed"` and `reason=null`; this is a \
-successful no-op, never `status="ungroundable"`.
+successful no-op, never `status="ungroundable"`. In this case, do not use the \
+changed-robot list format from rule 9. Say specifically that the requested \
+state is already in the plan. If the latest message is a command rather than \
+a question, ask what aspect the user wants to change (for example allocation, \
+order, or placement).
 """
 
 STAGE1_PROMPT = """\

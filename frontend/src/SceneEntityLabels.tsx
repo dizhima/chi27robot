@@ -15,15 +15,49 @@ const DISCOVERY_RETRY_SECONDS = 0.5;
 type SceneEntityLabelsProps = {
   manifest: SceneManifest;
   showObjects: boolean;
+  pickEnabled?: boolean;
+  onLabelPick?: (pick: SceneEntityLabelPick) => void;
 };
 
-export function SceneEntityLabels({ manifest, showObjects }: SceneEntityLabelsProps) {
+export type SceneEntityLabelPick =
+  | {
+      kind: "object";
+      name: string;
+      bodyId: number;
+      bodyName: string;
+      worldPos: [number, number, number];
+    }
+  | { kind: "facility"; name: string };
+
+export function SceneEntityLabels({
+  manifest,
+  showObjects,
+  pickEnabled = false,
+  onLabelPick,
+}: SceneEntityLabelsProps) {
   const mujoco = useMujoco();
   const api = mujoco.isReady ? mujoco.api : null;
   const [anchors, setAnchors] = useState<SceneEntityLabelAnchor[]>([]);
   const labelRefs = useRef(new Map<string, Group>());
   const modelRef = useRef<unknown>(null);
   const nextDiscoveryAtRef = useRef(0);
+
+  const pickLabel = (anchor: SceneEntityLabelAnchor) => {
+    if (!pickEnabled || !onLabelPick) return;
+    if (anchor.kind === "facility") {
+      onLabelPick({ kind: "facility", name: anchor.name });
+      return;
+    }
+    const group = labelRefs.current.get(anchor.name);
+    if (!group) return;
+    onLabelPick({
+      kind: "object",
+      name: anchor.name,
+      bodyId: anchor.bodyId,
+      bodyName: anchor.bodyName,
+      worldPos: [group.position.x, group.position.y, group.position.z - OBJECT_LABEL_CLEARANCE],
+    });
+  };
 
   const discoverAnchors = () => {
     if (!api) return [];
@@ -80,7 +114,16 @@ export function SceneEntityLabels({ manifest, showObjects }: SceneEntityLabelsPr
           }}
         >
           <Html center sprite zIndexRange={[19, 0]}>
-            <div className={`scene-entity-label is-${anchor.kind}`}>
+            <div
+              className={`scene-entity-label is-${anchor.kind}${pickEnabled ? " is-pickable" : ""}`}
+              onPointerDown={pickEnabled ? (event) => event.stopPropagation() : undefined}
+              onDoubleClick={pickEnabled ? (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                pickLabel(anchor);
+              } : undefined}
+              title={pickEnabled ? `Reference ${anchor.name}` : undefined}
+            >
               {anchor.text}
             </div>
           </Html>
