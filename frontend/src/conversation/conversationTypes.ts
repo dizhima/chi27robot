@@ -23,7 +23,7 @@ export type UserMessageDisplayPart =
   | {
       type: "ref";
       label: string;
-      kind: "object" | "facility" | "position" | "plan_task";
+      kind: "object" | "facility" | "robot" | "position" | "plan_task";
     };
 
 /** Unified message model. Superset of the old ChatMessage (role/content/source
@@ -41,6 +41,8 @@ export type ConversationMessage = {
   intent?: Intent;
   /** producer tag; used to exclude non-author content from Author context */
   source?: "authoring" | "resolver" | "explain";
+  /** Visible transcript content that must never be sent back to the model. */
+  excludeFromModel?: boolean;
   /** Phase 2: accumulated stream activity log (intent_selected/progress/warning
    *  events), ordered by seq. LIVE-only past Phase 4/D8: this is the
    *  per-attempt trail that justifies itself while a turn is running (the

@@ -209,6 +209,22 @@ RESET_YAW_MATCH_TOL = 0.10
 REACHIN_FRONT_DISTANCE = 0.28
 REACHIN_LIFT_HEIGHT = 0.03
 REACHIN_CARTESIAN_STEP = 0.025
+# Deterministic, scene-calibrated continuation seeds for narrow-container
+# reach-in. These are single seeds, not candidate banks: failure is immediate.
+REACHIN_ENTRY_SEED_BY_OBJECT = {
+    "cake_1": {
+        "torso": 0.24393019590396614,
+        "arm": [
+            -2.8973,
+            -1.0437646297517291,
+            -0.025405470256135487,
+            -2.6808031699384838,
+            -0.5163490354902041,
+            0.09063963088958449,
+            -2.8491665766044725,
+        ],
+    },
+}
 
 
 def _wrap_pi(x):
@@ -1157,7 +1173,7 @@ HORIZONTAL_GRASP_Z_OFFSET_BY_OBJECT = {
 
 
 def gen_pick(rig, q_start, obj_name, label=None, grasp_mode="top_down",
-             return_to_ready=True, grasp_offset=None):
+             return_to_ready=True, grasp_offset=None, post_grasp_lift=0.0):
     """Pick with either a vertical top-down or horizontal side approach.
 
     top_down (default): ready -> above -> descend -> close -> ready.
@@ -1172,6 +1188,11 @@ def gen_pick(rig, q_start, obj_name, label=None, grasp_mode="top_down",
     ready_q = q_start.copy()
     rig.apply_ready(ready_q)
     rig.set_fingers(ready_q, rig.finger_open)
+    # body_xy reads MuJoCo's live data, so synchronize it to this step's actual
+    # threaded state. Otherwise a preceding planner's final collision probe can
+    # leak a stale object pose into grasp targeting.
+    rig.data.qpos[:] = ready_q
+    mujoco.mj_forward(rig.model, rig.data)
     if grasp_offset is None:
         effective_grasp_offset = np.array([0.0, 0.0, 0.02])
         if grasp_mode == "horizontal":
@@ -1329,13 +1350,40 @@ def gen_pick(rig, q_start, obj_name, label=None, grasp_mode="top_down",
     else:
         # Replay the verified Cartesian approach in reverse while carrying.
         retreat = []
-        for waypoint in reversed(cartesian[:-1]):
-            waypoint = waypoint.copy()
-            rig.set_fingers(waypoint, rig.finger_closed)
-            retreat.append(waypoint)
-        pre_back = pre.copy()
-        rig.set_fingers(pre_back, rig.finger_closed)
-        retreat.append(pre_back)
+        post_grasp_lift = float(post_grasp_lift)
+        if post_grasp_lift < 0.0 or not np.isfinite(post_grasp_lift):
+            raise ValueError("post_grasp_lift must be a finite non-negative number")
+        if post_grasp_lift > 0.0:
+            source_retreat = [*reversed(cartesian[:-1]), pre]
+            current = closed.copy()
+            source_eef, _ = rig.eef_pose(closed)
+            lifted_target = source_eef + np.array([0.0, 0.0, post_grasp_lift])
+            lifted = current.copy()
+            rig.ik_arm(
+                lifted, lifted_target, top_down=False,
+                approach_world=approach, up_world=WORLD_UP)
+            rig.set_fingers(lifted, rig.finger_closed)
+            retreat.append(lifted)
+            current = lifted
+            for source in source_retreat:
+                source_target, _ = rig.eef_pose(source)
+                target = source_target + np.array([0.0, 0.0, post_grasp_lift])
+                candidate = current.copy()
+                rig.ik_arm(
+                    candidate, target, top_down=False,
+                    approach_world=approach, up_world=WORLD_UP)
+                rig.set_fingers(candidate, rig.finger_closed)
+                retreat.append(candidate)
+                current = candidate
+            pre_back = retreat[-1]
+        else:
+            for waypoint in reversed(cartesian[:-1]):
+                waypoint = waypoint.copy()
+                rig.set_fingers(waypoint, rig.finger_closed)
+                retreat.append(waypoint)
+            pre_back = pre.copy()
+            rig.set_fingers(pre_back, rig.finger_closed)
+            retreat.append(pre_back)
         if return_to_ready:
             back = ready_q.copy()
             rig.set_fingers(back, rig.finger_closed)
@@ -1374,6 +1422,7 @@ def gen_pick(rig, q_start, obj_name, label=None, grasp_mode="top_down",
     track["meta"]["grasp_mode"] = grasp_mode
     track["meta"]["grasp_offset"] = [
         float(value) for value in effective_grasp_offset]
+    track["meta"]["post_grasp_lift"] = float(post_grasp_lift)
     track["meta"]["return_to_ready"] = bool(
         grasp_mode == "horizontal" and return_to_ready)
     if grasp_mode == "horizontal":
@@ -1658,7 +1707,10 @@ def gen_place_reachin(rig, q_start, obj_name, interior_body, off, label=None,
                       reachin_lift_height=None, simple_ingress=True,
                       release_clearance=0.01,
                       cartesian_rrt_fallback=False,
-                      nearby_rrt_fallback=False):
+                      nearby_rrt_fallback=False,
+                      validate_open_gripper=False,
+                      release_fingers=None,
+                      return_planning_details=False):
     """Collision-checked horizontal reach-in place into an open container.
 
     The base remains fixed. RRT-Connect first reaches a collision-free high pose
@@ -1670,6 +1722,11 @@ def gen_place_reachin(rig, q_start, obj_name, interior_body, off, label=None,
     """
     planner_started = time.perf_counter()
     label = label or f"place_{obj_name}"
+    release_fingers = (
+        rig.finger_open if release_fingers is None
+        else [float(value) for value in release_fingers])
+    if len(release_fingers) != 2:
+        raise ValueError("release_fingers must contain two joint values")
     rng = np.random.default_rng(RRT_SEED + rig.robot)
     off_pos, off_quat = off
     scene_q, container_root = _container_scene_state(
@@ -1763,22 +1820,36 @@ def gen_place_reachin(rig, q_start, obj_name, interior_body, off, label=None,
                     stats["last_rejection"] = "joint_limit"
                     return False
             q = q_for_config(config)
-            d.qpos[:] = q
-            mujoco.mj_forward(m, d)
-            for ci in range(d.ncon):
-                contact = d.contact[ci]
-                g1, g2 = int(contact.geom1), int(contact.geom2)
-                if ((g1 in moving_geoms and g2 in container_geoms)
-                        or (g2 in moving_geoms and g1 in container_geoms)):
-                    if (min(g1, g2), max(g1, g2)) in baseline_pairs:
-                        continue
-                    stats["rejected"] += 1
-                    stats["last_collision"] = (
-                        mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g1),
-                        mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g2),
-                    )
-                    stats["last_rejection"] = "contact"
-                    return False
+            finger_states = [rig.finger_closed]
+            if validate_open_gripper:
+                finger_states = [
+                    [
+                        (1.0 - alpha) * closed + alpha * opened
+                        for closed, opened in zip(
+                            rig.finger_closed, release_fingers)
+                    ]
+                    for alpha in np.linspace(0.0, 1.0, 5)
+                ]
+            for finger_index, finger_state in enumerate(finger_states):
+                rig.set_fingers(q, finger_state)
+                d.qpos[:] = q
+                mujoco.mj_forward(m, d)
+                for ci in range(d.ncon):
+                    contact = d.contact[ci]
+                    g1, g2 = int(contact.geom1), int(contact.geom2)
+                    if ((g1 in moving_geoms and g2 in container_geoms)
+                            or (g2 in moving_geoms and g1 in container_geoms)):
+                        if (min(g1, g2), max(g1, g2)) in baseline_pairs:
+                            continue
+                        stats["rejected"] += 1
+                        stats["last_collision"] = (
+                            mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g1),
+                            mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g2),
+                        )
+                        stats["last_rejection"] = (
+                            "open_gripper_contact"
+                            if finger_index else "contact")
+                        return False
             return True
         finally:
             stats["collision_time_sec"] += time.perf_counter() - check_started
@@ -2086,7 +2157,7 @@ def gen_place_reachin(rig, q_start, obj_name, interior_body, off, label=None,
     goal_eef_error = 0.0
     goal_obj_error = float(np.linalg.norm(final_obj - desired_obj))
     opened = forward[-1].copy()
-    rig.set_fingers(opened, rig.finger_open)
+    rig.set_fingers(opened, release_fingers)
     retreat = []
     for q in reversed(forward[:-1]):
         q = q.copy()
@@ -2172,8 +2243,282 @@ def gen_place_reachin(rig, q_start, obj_name, interior_body, off, label=None,
         "rrt_horizontal_ingress": rrt_horizontal_ingress,
         "container_state_source": state_source,
         "container_support_geom": support_geom,
+        "validated_open_gripper": bool(validate_open_gripper),
+        "release_fingers": release_fingers,
     })
+    if return_planning_details:
+        return track, waypoints[-1].copy(), {
+            "forward": [waypoint.copy() for waypoint in forward],
+            "scene_q": scene_q.copy(),
+        }
     return track, waypoints[-1].copy()
+
+
+def gen_pick_reachin(
+        rig, q_start, obj_name, interior_body, label=None,
+        state_source="current", support_geom=None, front_distance=None,
+        ik_eef_tolerance=0.012, randomize_preinsert_first=False,
+        ik_top_down=False, rrt_horizontal_ingress=False,
+        reachin_lift_height=None, cartesian_rrt_fallback=False,
+        nearby_rrt_fallback=False, grasp_offset=None,
+        calibrated_track_path=None):
+    """Load a frame-validated deterministic front-container pick corridor.
+
+    Runtime seed search is intentionally disabled.  Study-scene reach-ins are
+    calibrated once, then replayed as outside/open -> reach in -> close/attach
+    -> withdraw.  A missing calibration fails immediately instead of entering
+    the former multi-minute IK/RRT retry loop.
+    """
+    label = label or f"pick_{obj_name}_reachin"
+    scene_q, container_root = _container_scene_state(
+        rig, q_start, interior_body, state_source=state_source)
+    rig.set_fingers(scene_q, rig.finger_open)
+
+    calibrated_track_path = (
+        None if calibrated_track_path is None
+        else Path(calibrated_track_path))
+    if calibrated_track_path is not None and calibrated_track_path.exists():
+        track = json.loads(calibrated_track_path.read_text("utf-8"))
+        track["meta"]["skill"] = label
+        track["meta"]["planner"] = "calibrated_single_seed_reachin_pick"
+        track["meta"]["grasp_mode"] = "reachin"
+        track["meta"]["reachin_seed_attempts"] = 0
+        track["meta"]["reachin_calibrated_track"] = str(
+            calibrated_track_path)
+        q_end = _apply_track_last_frame(rig, scene_q.copy(), track)
+        off = _grasp_offset(rig, obj_name, q_end)
+        return track, q_end, off
+    raise ValueError(
+        f"reach-in pick for '{obj_name}' has no calibrated track; "
+        "online IK/RRT seed search is disabled")
+
+    obj_adr = rig.jadr(_obj_joint(obj_name))
+    object_pose = scene_q[obj_adr:obj_adr + 7].copy()
+    object_pos = object_pose[:3]
+    base_xy = rig.base_xy(scene_q)
+    approach = np.array([
+        float(object_pos[0] - base_xy[0]),
+        float(object_pos[1] - base_xy[1]),
+        0.0,
+    ])
+    approach_norm = float(np.linalg.norm(approach))
+    if approach_norm < 1e-6:
+        raise ValueError(
+            f"cannot infer reverse reach-in direction for '{obj_name}'")
+    approach /= approach_norm
+
+    m, d = rig.model, rig.data
+    arm_root = mujoco.mj_name2id(
+        m, mujoco.mjtObj.mjOBJ_BODY, f"robot{rig.robot}_link0")
+    arm_geoms = _body_subtree_geoms(m, arm_root)
+    container_geoms = _body_subtree_geoms(m, container_root)
+
+    def endpoint_valid(candidate):
+        d.qpos[:] = candidate
+        mujoco.mj_forward(m, d)
+        for contact_index in range(d.ncon):
+            contact = d.contact[contact_index]
+            g1, g2 = int(contact.geom1), int(contact.geom2)
+            if ((g1 in arm_geoms and g2 in container_geoms)
+                    or (g2 in arm_geoms and g1 in container_geoms)):
+                return False
+        return True
+
+    grasp_offset = np.zeros(3) if grasp_offset is None else np.asarray(
+        grasp_offset, dtype=float)
+    if grasp_offset.shape != (3,) or not np.all(np.isfinite(grasp_offset)):
+        raise ValueError("reachin grasp_offset must be a finite [x, y, z]")
+    grasp_target = object_pos + grasp_offset
+    reachin_front_distance = (
+        REACHIN_FRONT_DISTANCE if front_distance is None
+        else float(front_distance))
+    reachin_lift_height = (
+        REACHIN_LIFT_HEIGHT if reachin_lift_height is None
+        else float(reachin_lift_height))
+    open_fingers = [0.02, -0.02]
+    entry_seed = REACHIN_ENTRY_SEED_BY_OBJECT.get(obj_name)
+    if entry_seed is None:
+        raise ValueError(
+            f"reach-in pick for '{obj_name}' has no calibrated single seed")
+
+    # One deterministic continuation seed only: each waypoint starts from the
+    # preceding solution.  A failure is reported immediately; reach-in pick
+    # deliberately does not randomize or try a bank of alternate IK seeds.
+    ingress = [scene_q.copy()]
+    rig.set_fingers(ingress[0], open_fingers)
+    eef_start, _ = rig.eef_pose(ingress[0])
+    outside_high = (
+        grasp_target - reachin_front_distance * approach
+        + np.array([0.0, 0.0, reachin_lift_height]))
+    inside_high = grasp_target + np.array(
+        [0.0, 0.0, reachin_lift_height])
+    stage_targets = [
+        ("to-entry", outside_high),
+        ("horizontal-insert", inside_high),
+        ("vertical-lower", grasp_target),
+    ]
+    previous_eef = eef_start.copy()
+    waypoint_diagnostics = []
+    for stage_name, stage_target in stage_targets:
+        distance = float(np.linalg.norm(stage_target - previous_eef))
+        count = (
+            1 if stage_name == "to-entry"
+            else max(1, int(np.ceil(distance / REACHIN_CARTESIAN_STEP))))
+        stage_start = previous_eef.copy()
+        for waypoint_index, alpha in enumerate(
+                np.linspace(0.0, 1.0, count + 1)[1:], start=1):
+            eef_target = (
+                (1.0 - alpha) * stage_start + alpha * stage_target)
+            # Keep the tool facing the object along the robot-to-object access
+            # ray. Do not literally "look at" the centre from every nearby
+            # waypoint: at the offset edge grasp that vector turns 90 degrees
+            # sideways and drives link4 into the refrigerator door.
+            look_at = approach
+            candidate = ingress[-1].copy()
+            if stage_name == "to-entry":
+                candidate[rig.TORSO] = float(entry_seed["torso"])
+                candidate[rig.ARM] = entry_seed["arm"]
+            rig.set_fingers(candidate, open_fingers)
+            for _ in range(3):
+                rig.ik_arm(
+                    candidate, eef_target, top_down=False,
+                    approach_world=look_at, up_world=WORLD_UP)
+            actual_eef, _ = rig.eef_pose(candidate)
+            rotation = d.xmat[rig.eef].reshape(3, 3).copy()
+            position_error = float(np.linalg.norm(actual_eef - eef_target))
+            approach_error = float(np.linalg.norm(np.cross(
+                rotation @ APPROACH_LOCAL, look_at)))
+            up_error = float(np.linalg.norm(np.cross(
+                rotation @ GRIPPER_UP_LOCAL, WORLD_UP)))
+            if (position_error > ik_eef_tolerance
+                    or approach_error > 0.35 or up_error > 0.25):
+                raise ValueError(
+                    f"single-seed reach-in {stage_name} waypoint "
+                    f"{waypoint_index}/{count} failed "
+                    f"(position={position_error:.4f}, "
+                    f"approach={approach_error:.4f}, up={up_error:.4f})")
+            if not endpoint_valid(candidate):
+                collision_names = []
+                for contact_index in range(d.ncon):
+                    contact = d.contact[contact_index]
+                    g1, g2 = int(contact.geom1), int(contact.geom2)
+                    if ((g1 in arm_geoms and g2 in container_geoms)
+                            or (g2 in arm_geoms and g1 in container_geoms)):
+                        collision_names.append((
+                            mujoco.mj_id2name(
+                                m, mujoco.mjtObj.mjOBJ_GEOM, g1),
+                            mujoco.mj_id2name(
+                                m, mujoco.mjtObj.mjOBJ_GEOM, g2),
+                        ))
+                raise ValueError(
+                    f"single-seed reach-in {stage_name} waypoint "
+                    f"{waypoint_index}/{count} collides with container: "
+                    f"{collision_names}")
+            ingress.append(candidate)
+            waypoint_diagnostics.append({
+                "stage": stage_name,
+                "position_error": position_error,
+                "approach_error": approach_error,
+                "up_error": up_error,
+            })
+        previous_eef = stage_target
+
+    grasp_q = ingress[-1]
+    eef_pos, eef_quat = rig.eef_pose(grasp_q)
+    off_pos = quat_rot(quat_conj(eef_quat), object_pos - eef_pos)
+    off_quat = quat_mul(quat_conj(eef_quat), object_pose[3:7])
+    off = (off_pos, off_quat)
+    closed = ingress[-1].copy()
+    rig.set_fingers(closed, rig.finger_closed)
+    egress = []
+    for waypoint in reversed(ingress[:-1]):
+        waypoint = waypoint.copy()
+        rig.set_fingers(waypoint, rig.finger_closed)
+        egress.append(waypoint)
+    waypoints = ingress + [closed] + egress
+    pick_plan_adrs = [rig.TORSO, *rig.ARM]
+    durations = [
+        max(
+            0.15,
+            float(np.max(np.abs(b[pick_plan_adrs] - a[pick_plan_adrs])))
+            / RRT_ARM_SPEED,
+        )
+        for a, b in zip(waypoints, waypoints[1:])
+    ]
+    durations[len(ingress) - 1] = max(
+        0.4, durations[len(ingress) - 1])
+    obj = {
+        "name": obj_name,
+        "attach_from_seg": len(ingress),
+        "off_pos": off_pos,
+        "off_quat": off_quat,
+        "static_pose": (object_pose[:3], object_pose[3:7]),
+    }
+    track = build_track(rig, label, waypoints, durations, obj)
+
+    # Validate the motion that will actually be replayed.  The forward place
+    # template checks a closed gripper carrying the object on ingress; after
+    # reversal, ingress uses an open (wider) empty gripper, so validating only
+    # the template could miss a finger/door collision.
+    object_root = mujoco.mj_name2id(
+        m, mujoco.mjtObj.mjOBJ_BODY, f"{obj_name}_main")
+    object_geoms = _body_subtree_geoms(m, object_root)
+    channel_adrs = {
+        name: (rig.jadr(name), len(values[0]))
+        for name, values in track["channels"].items()
+    }
+    baseline_object_pairs = set()
+    replay_q = scene_q.copy()
+    for name, values in track["channels"].items():
+        address, width = channel_adrs[name]
+        replay_q[address:address + width] = values[0]
+    d.qpos[:] = replay_q
+    mujoco.mj_forward(m, d)
+    for contact_index in range(d.ncon):
+        contact = d.contact[contact_index]
+        g1, g2 = int(contact.geom1), int(contact.geom2)
+        if ((g1 in object_geoms and g2 in container_geoms)
+                or (g2 in object_geoms and g1 in container_geoms)):
+            baseline_object_pairs.add((min(g1, g2), max(g1, g2)))
+
+    for frame_index in range(len(track["time"])):
+        replay_q[:] = scene_q
+        for name, values in track["channels"].items():
+            address, width = channel_adrs[name]
+            replay_q[address:address + width] = values[frame_index]
+        d.qpos[:] = replay_q
+        mujoco.mj_forward(m, d)
+        for contact_index in range(d.ncon):
+            contact = d.contact[contact_index]
+            g1, g2 = int(contact.geom1), int(contact.geom2)
+            arm_container = (
+                (g1 in arm_geoms and g2 in container_geoms)
+                or (g2 in arm_geoms and g1 in container_geoms))
+            object_container = (
+                (g1 in object_geoms and g2 in container_geoms)
+                or (g2 in object_geoms and g1 in container_geoms))
+            pair = (min(g1, g2), max(g1, g2))
+            if arm_container or (
+                    object_container and pair not in baseline_object_pairs):
+                raise ValueError(
+                    "reach-in pick replay collides with container at "
+                    f"frame {frame_index}/{len(track['time']) - 1}: "
+                    f"{mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g1)} <-> "
+                    f"{mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g2)}")
+
+    track["meta"].update({
+        "planner": "single_seed_cartesian_reachin_pick",
+        "grasp_mode": "reachin",
+        "reachin_corridor_source": "direct_cartesian",
+        "reachin_seed_attempts": 1,
+        "reachin_waypoints": len(ingress),
+        "reachin_waypoint_diagnostics": waypoint_diagnostics,
+        "reachin_replay_collision_checks": len(track["time"]),
+        "reachin_grasp_offset": [float(value) for value in grasp_offset],
+        "rrt_path_collision_free": False,
+    })
+    q_end = _apply_track_last_frame(rig, scene_q.copy(), track)
+    return track, q_end, off
 
 
 def gen_wait(rig, q_start, dur, carrying=None):
@@ -3780,6 +4125,21 @@ def _scene_initial_qpos(rig, manifest):
     return rig.model.key_qpos[key].copy()
 
 
+def _ready_from_scene_initial(rig, manifest):
+    """Return this robot's ready state from the scene init keyframe.
+
+    A replay is not a safe ready-pose source when it was synthesized by time
+    reversal: frame 0 is then the source skill's terminal manipulation pose.
+    Generated tracks must instead begin from the session state they overlay.
+    """
+    q = _scene_initial_qpos(rig, manifest)
+    return {
+        "arm": [float(q[address]) for address in rig.ARM],
+        "torso": float(q[rig.TORSO]),
+        "fingers": [float(q[address]) for address in rig.FINGERS],
+    }
+
+
 def _new_robot_compile_context(rig, initial_q=None):
     q = (rig.model.qpos0 if initial_q is None else initial_q).copy()
     rig.apply_ready(q)
@@ -3979,10 +4339,45 @@ def compile_robot(rig, robot_name, steps, standoffs, tracks_dir, facilities,
                     f"{robot_name} cannot pick it")
             pick_grasp_mode = step.get("grasp_mode", "top_down")
             return_to_ready = step.get("return_to_ready", True)
-            tr, q, off = gen_pick(
-                rig, q, obj, grasp_mode=pick_grasp_mode,
-                return_to_ready=return_to_ready,
-                grasp_offset=step.get("grasp_offset"))
+            if pick_grasp_mode == "reachin":
+                candidate_regions = [
+                    (name, region)
+                    for name, region in placement_regions.items()
+                    if region.get("access") == "front"
+                    and obj in (region.get("object_slot_points") or {})
+                ]
+                if len(candidate_regions) != 1:
+                    raise ValueError(
+                        f"reachin pick for '{obj}' requires exactly "
+                        "one front-access facility with an object_slot_points "
+                        f"entry; found {[name for name, _ in candidate_regions]}")
+                _, region = candidate_regions[0]
+                tr, q, off = gen_pick_reachin(
+                    rig, q, obj, region["interior_body"],
+                    state_source=region.get("state_source", "current"),
+                    support_geom=region.get("support_geom"),
+                    front_distance=region.get("front_distance"),
+                    ik_eef_tolerance=region.get("ik_eef_tolerance", 0.012),
+                    randomize_preinsert_first=region.get(
+                        "randomize_preinsert_first", False),
+                    ik_top_down=region.get("ik_top_down", False),
+                    rrt_horizontal_ingress=region.get(
+                        "rrt_horizontal_ingress", False),
+                    reachin_lift_height=region.get("reachin_lift_height"),
+                    cartesian_rrt_fallback=region.get(
+                        "cartesian_rrt_fallback", False),
+                    nearby_rrt_fallback=region.get(
+                        "nearby_rrt_fallback", False),
+                    grasp_offset=step.get("grasp_offset"),
+                    calibrated_track_path=(
+                        Path(tracks_dir) / robot_name
+                        / f"pick_{obj}_reachin.track.json"))
+            else:
+                tr, q, off = gen_pick(
+                    rig, q, obj, grasp_mode=pick_grasp_mode,
+                    return_to_ready=return_to_ready,
+                    grasp_offset=step.get("grasp_offset"),
+                    post_grasp_lift=step.get("post_grasp_lift", 0.0))
             # Once a horizontal pick has returned to the canonical ready arm,
             # its actual carry frame is no longer the side-grasp orientation.
             # Let reach-in placement solve position-first from that real ready
@@ -3990,7 +4385,8 @@ def compile_robot(rig, robot_name, steps, standoffs, tracks_dir, facilities,
             # orientation (which drives link7 into the upper shelf).
             held_grasp_mode = (
                 "ready"
-                if pick_grasp_mode == "horizontal" and return_to_ready
+                if (pick_grasp_mode == "reachin"
+                    or (pick_grasp_mode == "horizontal" and return_to_ready))
                 else pick_grasp_mode
             )
             held_place_seed = (
@@ -6088,7 +6484,6 @@ def compile_plan_v2(
     plan_started = time.perf_counter()
     standoffs = load_standoffs(standoffs_path)
     island = json.loads(Path(standoffs_path).read_text("utf-8"))["island_bbox"]
-    ready_tracks = load_ready(tracks_dir)
     manifest = json.loads(Path(manifest_path).read_text("utf-8"))
     skill_robots = {
         skill["name"]: set(skill.get("robots") or [])
@@ -6192,9 +6587,11 @@ def compile_plan_v2(
 
     rigs = {
         robot: get_rig(
-            scene_xml, int(robot.replace("robot", "")), ready_tracks, island)
+            scene_xml, int(robot.replace("robot", "")), island=island)
         for robot in plans
     }
+    for rig in rigs.values():
+        rig.set_ready(_ready_from_scene_initial(rig, manifest))
     first_rig = next(iter(rigs.values()))
     initial_q = {
         robot: _scene_initial_qpos(rig, manifest)
@@ -7197,7 +7594,6 @@ def compile_plan(
     plan_started = time.perf_counter()
     standoffs = load_standoffs(standoffs_path)
     island = json.loads(Path(standoffs_path).read_text("utf-8"))["island_bbox"]
-    ready = load_ready(tracks_dir)
     manifest = json.loads(Path(manifest_path).read_text("utf-8"))
     facilities = {s["name"]: s.get("facility") for s in manifest["skills"]}
     facilities.update({name: name for name in manifest["facilities"]})
@@ -7240,9 +7636,11 @@ def compile_plan(
     ordered_steps = _container_dependency_order(plans, manifest)
     rigs = {
         robot_name: get_rig(
-            scene_xml, int(robot_name.replace("robot", "")), ready, island)
+            scene_xml, int(robot_name.replace("robot", "")), island=island)
         for robot_name in plans
     }
+    for rig in rigs.values():
+        rig.set_ready(_ready_from_scene_initial(rig, manifest))
     first_rig = next(iter(rigs.values()))
     initial_q = {
         robot_name: _scene_initial_qpos(rig, manifest)

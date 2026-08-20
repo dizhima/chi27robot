@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import * as pty from "node-pty";
 import { createCheckpointStore } from "./checkpointStore.js";
+import { clearGeneratedTrackCaches } from "./generatedTrackCleanup.js";
 import { deriveSceneRuntime, inspectSkillRuntime } from "./sceneRuntime.js";
 
 const execFileAsync = promisify(execFile);
@@ -898,17 +899,31 @@ const server = http.createServer(async (req, res) => {
   writeJson(res, 404, { ok: false, error: "not found" });
 });
 
-server.listen(port, host, () => {
-  const args = getCodexArgs();
-  console.log(`Codex bridge listening on http://${host}:${port}`);
-  console.log(`Workspace: ${workspace}`);
-  console.log(`Command: ${command}${args.length ? ` ${args.join(" ")}` : ""}`);
-  void restartSceneServices().catch((error) => {
+async function startServer() {
+  try {
+    const removed = await clearGeneratedTrackCaches(trajectoriesDir);
+    const directoryWord = removed.length === 1 ? "directory" : "directories";
+    console.log(`Cleared ${removed.length} generated track cache ${directoryWord}.`);
+  } catch (error) {
     console.error(
-      `Failed to initialize scene services: ${error instanceof Error ? error.message : String(error)}`,
+      `Failed to clear generated track caches: ${error instanceof Error ? error.message : String(error)}`,
     );
+  }
+
+  server.listen(port, host, () => {
+    const args = getCodexArgs();
+    console.log(`Codex bridge listening on http://${host}:${port}`);
+    console.log(`Workspace: ${workspace}`);
+    console.log(`Command: ${command}${args.length ? ` ${args.join(" ")}` : ""}`);
+    void restartSceneServices().catch((error) => {
+      console.error(
+        `Failed to initialize scene services: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
   });
-});
+}
+
+void startServer();
 
 // Tear down child processes when the backend exits so nothing is orphaned.
 function shutdown() {

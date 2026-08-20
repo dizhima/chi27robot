@@ -23,7 +23,7 @@ export type ComposerPart =
   | { type: "ref"; refId: string };
 
 export type ComposerHandle = {
-  insertToken: (refId: string, label: string, kind: "object" | "facility" | "position" | "plan_task") => void;
+  insertToken: (refId: string, label: string, kind: "object" | "facility" | "robot" | "position" | "plan_task") => void;
   focus: () => void;
   clear: () => void;
   submit: () => void;
@@ -122,6 +122,8 @@ export const RefComposer = forwardRef<ComposerHandle, RefComposerProps>(function
         token.dataset.refId = refId;
         token.textContent = kind === "position"
           ? `📍 ${label}`
+          : kind === "robot"
+            ? `● ${label}`
           : kind === "facility"
             ? `◇ ${label}`
             : kind === "plan_task"

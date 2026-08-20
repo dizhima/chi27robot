@@ -382,8 +382,9 @@ OPS = {
         "generated": True,
         "params": {
             "object": "an object name from `objects` (all listed objects are pickable)",
-            "grasp_mode": "optional: 'top_down' (default) or 'horizontal'",
+            "grasp_mode": "optional: 'top_down' (default), 'horizontal', or 'reachin'",
             "return_to_ready": "horizontal pick only; optional boolean, defaults to true",
+            "post_grasp_lift": "horizontal pick only; optional vertical lift in metres before retreat",
         },
     },
     "place": {
@@ -691,14 +692,24 @@ def build_manifest(scene_xml: Path, tracks_dir: Path, scene_table_path: Path,
                     f"objects.{name}.pick: expected an object")
             else:
                 grasp_mode = pick_cfg.get("grasp_mode", "top_down")
-                if grasp_mode not in {"top_down", "horizontal"}:
+                if grasp_mode not in {"top_down", "horizontal", "reachin"}:
                     validation_errors.append(
                         f"objects.{name}.pick.grasp_mode: expected "
-                        "'top_down' or 'horizontal'")
+                        "'top_down', 'horizontal', or 'reachin'")
                 return_to_ready = pick_cfg.get("return_to_ready", True)
                 if not isinstance(return_to_ready, bool):
                     validation_errors.append(
                         f"objects.{name}.pick.return_to_ready: expected boolean")
+                has_post_grasp_lift = "post_grasp_lift" in pick_cfg
+                post_grasp_lift = pick_cfg.get("post_grasp_lift", 0.0)
+                try:
+                    post_grasp_lift = float(post_grasp_lift)
+                except (TypeError, ValueError):
+                    post_grasp_lift = float("nan")
+                if not np.isfinite(post_grasp_lift) or post_grasp_lift < 0.0:
+                    validation_errors.append(
+                        f"objects.{name}.pick.post_grasp_lift: expected a "
+                        "finite non-negative number")
                 grasp_offset = pick_cfg.get("grasp_offset")
                 normalized_grasp_offset = None
                 if grasp_offset is not None:
@@ -719,11 +730,13 @@ def build_manifest(scene_xml: Path, tracks_dir: Path, scene_table_path: Path,
                                 f"{offset_path}: coordinates must be finite numbers")
                         else:
                             normalized_grasp_offset = candidate_offset
-                if (grasp_mode in {"top_down", "horizontal"}
+                if (grasp_mode in {"top_down", "horizontal", "reachin"}
                         and isinstance(return_to_ready, bool)):
                     normalized_pick = {"grasp_mode": grasp_mode}
                     if grasp_mode == "horizontal":
                         normalized_pick["return_to_ready"] = return_to_ready
+                        if has_post_grasp_lift:
+                            normalized_pick["post_grasp_lift"] = post_grasp_lift
                     if normalized_grasp_offset is not None:
                         normalized_pick["grasp_offset"] = normalized_grasp_offset
         objects_out[name] = {

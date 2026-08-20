@@ -241,6 +241,11 @@ def _context(
         for ref in scene_refs
         if isinstance(ref, dict) and ref.get("kind") == "facility" and ref.get("name")
     ]
+    referenced_robots = [
+        str(ref.get("name"))
+        for ref in scene_refs
+        if isinstance(ref, dict) and ref.get("kind") == "robot" and ref.get("name")
+    ]
     referenced_pins = [
         {"handle": ref.get("handle"), "facility": ref.get("on_facility")}
         for ref in scene_refs
@@ -286,6 +291,7 @@ def _context(
             "user_referenced": {
                 "objects": referenced_objects,
                 "facilities": referenced_facilities,
+                "robots": referenced_robots,
                 "pins": referenced_pins,
                 "plan_tasks": plan_refs or [],
             },

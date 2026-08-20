@@ -366,6 +366,12 @@ canvas {
   color: #fff6df;
 }
 
+.ref-token.is-robot {
+  border-color: rgba(99, 126, 234, 0.62);
+  background: rgba(99, 126, 234, 0.18);
+  color: #e6ebff;
+}
+
 .ref-token.is-plan_task {
   border-color: rgba(94, 176, 138, 0.72);
   background: rgba(94, 176, 138, 0.18);
@@ -1179,6 +1185,16 @@ canvas {
   letter-spacing: 0.02em;
   white-space: nowrap;
   user-select: none;
+  pointer-events: none;
+}
+
+.robot-identity-label.is-pickable {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.robot-identity-label.is-pickable:hover {
+  filter: brightness(1.15);
 }
 
 .robot-identity-dot {
@@ -2313,6 +2329,11 @@ html[data-ui-theme="light"] .ref-token.is-facility,
 html[data-ui-theme="light"] .ref-token.message-ref-chip.is-facility {
   background: #fff4d8;
   color: #75510a;
+}
+
+html[data-ui-theme="light"] .ref-token.is-robot {
+  background: #e8ecff;
+  color: #32458f;
 }
 
 html[data-ui-theme="light"] .composer-icon-btn.plan-ref,

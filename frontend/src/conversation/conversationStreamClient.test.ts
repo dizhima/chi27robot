@@ -213,6 +213,7 @@ describe("streamConversationTurn", () => {
       { id: "a1", role: "assistant", content: "resolved conflicts", source: "resolver" },
       { id: "a2", role: "assistant", content: "explanation", source: "explain" },
       { id: "a3", role: "assistant", content: "plan updated", source: "authoring" },
+      { id: "a4", role: "assistant", content: "full visible plan", excludeFromModel: true },
     ];
     const lastResolverReport = { converged: true };
 
@@ -243,7 +244,7 @@ describe("streamConversationTurn", () => {
     const body = JSON.parse(init.body as string);
     expect(body.turn_id).toBe("turn-1");
     expect(body.intent_hint).toBeNull();
-    // Same author context filter: exclude resolver/explain-tagged messages.
+    // Exclude resolver/explain-tagged and display-only messages.
     expect(body.messages).toEqual([
       { role: "user", content: "move apple", source: undefined },
       { role: "assistant", content: "plan updated", source: "authoring" },

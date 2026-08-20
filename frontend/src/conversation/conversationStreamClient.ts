@@ -181,7 +181,7 @@ export async function streamConversationTurn(
   // resolver/explain-tagged messages from Author's (and now the shared
   // unified) context.
   const authorMessages: ChatMessage[] = args.messages
-    .filter((m) => m.source !== "resolver" && m.source !== "explain")
+    .filter((m) => !m.excludeFromModel && m.source !== "resolver" && m.source !== "explain")
     .map((m) => ({ role: m.role, content: m.content, source: m.source as ChatMessage["source"] }));
   const currentActions = applyRobotOverrides(args.semanticActions, args.draftPlan);
 

@@ -127,6 +127,7 @@ describe("runConversationTurn", () => {
       { id: "a1", role: "assistant", content: "resolved conflicts", source: "resolver" },
       { id: "a2", role: "assistant", content: "explanation", source: "explain" },
       { id: "a3", role: "assistant", content: "plan updated", source: "authoring" },
+      { id: "a4", role: "assistant", content: "full visible plan", excludeFromModel: true },
     ];
 
     await runConversationTurn({

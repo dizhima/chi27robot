@@ -23,6 +23,21 @@ export type StudyPlanState = {
   actions: AugmentedAction[];
 };
 
+export function realizedStudyTasks({
+  plan,
+  actions,
+}: StudyPlanState): Record<RobotName, AugmentedAction[]> {
+  const actionById = new Map(actions.map((action) => [action.id, action]));
+  const tasks: Record<RobotName, AugmentedAction[]> = { robot0: [], robot1: [] };
+  for (const task of plan.tasks) {
+    if (!task.task) continue;
+    const action = actionById.get(task.task);
+    if (!action) continue;
+    tasks[task.robot].push(action);
+  }
+  return tasks;
+}
+
 /**
  * Project the realized plan into participant-visible semantic tasks. Plan task
  * order and assignment are authoritative; semantic actions only identify and
@@ -32,15 +47,11 @@ export function studyTaskSequences({
   plan,
   actions,
 }: StudyPlanState): Record<RobotName, string[]> {
-  const actionById = new Map(actions.map((action) => [action.id, action]));
-  const sequences: Record<RobotName, string[]> = { robot0: [], robot1: [] };
-  for (const task of plan.tasks) {
-    if (!task.task) continue;
-    const action = actionById.get(task.task);
-    if (!action) continue;
-    sequences[task.robot].push(studyActionKey(action));
-  }
-  return sequences;
+  const tasks = realizedStudyTasks({ plan, actions });
+  return {
+    robot0: tasks.robot0.map(studyActionKey),
+    robot1: tasks.robot1.map(studyActionKey),
+  };
 }
 
 export function matchesStudyTarget(

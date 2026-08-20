@@ -458,6 +458,7 @@ def _steps(
             pick["grasp_mode"] = configured_grasp
             if configured_grasp == "horizontal":
                 pick["return_to_ready"] = pick_cfg.get("return_to_ready", True)
+                pick["post_grasp_lift"] = pick_cfg.get("post_grasp_lift", 0.0)
         if "grasp_offset" in pick_cfg:
             pick["grasp_offset"] = list(pick_cfg["grasp_offset"])
         label = str(object_spec.get("label", ""))

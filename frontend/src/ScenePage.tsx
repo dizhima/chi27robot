@@ -16,7 +16,7 @@ import { SchedulePlayer, type SchedulePlayerHandle } from "./SchedulePlayer";
 import { GanttPanel } from "./plan/GanttPanel";
 import { PlanOverlay, type StepMarker } from "./plan/PlanOverlay";
 import { PlanTaskSubtitles } from "./plan/PlanTaskSubtitles";
-import { RobotIdentityLabels } from "./RobotIdentityLabels";
+import { RobotIdentityLabels, type RobotIdentityLabelPick } from "./RobotIdentityLabels";
 import { SceneEntityLabels, type SceneEntityLabelPick } from "./SceneEntityLabels";
 import { ReadyPoseController } from "./ReadyPoseController";
 import {
@@ -66,6 +66,7 @@ import { createEditTailScheduler, type EditTailScheduler } from "./plan/editTail
 import { type AugmentedAction } from "./plan/authorPlan";
 import type { AuthoredPlan, CompileResponse, RobotName } from "./plan/planTypes";
 import { matchesStudyTarget } from "./plan/studyTargetMatch";
+import { formatStudyPlanSummary } from "./plan/studyPlanSummary";
 import {
   listStudyCheckpoints,
   loadStudyCheckpoint,
@@ -107,8 +108,19 @@ const PLAN_SUBTITLES_STORAGE_KEY = "mujoco-plan-task-subtitles";
 const SHOW_SCENE_OBJECT_LABELS = import.meta.env.VITE_SHOW_SCENE_OBJECT_LABELS !== "false";
 const CHECKPOINT_SAVE_ENABLED = import.meta.env.VITE_ENABLE_CHECKPOINT_SAVE === "true";
 const CHECKPOINT_LOAD_ENABLED = import.meta.env.VITE_ENABLE_CHECKPOINT_LOAD === "true";
-const SIMPLE_COMPOUND_OUTPUT = import.meta.env.VITE_STUDY_SIMPLE_COMPOUND_OUTPUT === "true";
 const STUDY_TARGET_LOAD_ENABLED = import.meta.env.VITE_ENABLE_STUDY_TARGET_LOAD === "true";
+
+type StudyCompoundOutputMode = "normal" | "v1" | "v2";
+
+function studyCompoundOutputMode(value: string | undefined): StudyCompoundOutputMode {
+  if (value === "v2") return "v2";
+  if (value === "true" || value === "v1") return "v1";
+  return "normal";
+}
+
+const STUDY_COMPOUND_OUTPUT_MODE = studyCompoundOutputMode(
+  import.meta.env.VITE_STUDY_SIMPLE_COMPOUND_OUTPUT,
+);
 
 function initialPlanSubtitlesEnabled(): boolean {
   try {
@@ -158,6 +170,24 @@ function compactVersionTitle(text: string, fallback: string): string {
   const normalized = text.replace(/\s+/g, " ").trim();
   if (!normalized) return fallback;
   return normalized.length > 44 ? `${normalized.slice(0, 41)}…` : normalized;
+}
+
+function studyTurnResultContent(
+  outcome: Extract<TurnOutcome, { kind: "turn_result" }>,
+  fallbackPlan: AuthoredPlan | null,
+  fallbackActions: AugmentedAction[],
+): string {
+  if (STUDY_COMPOUND_OUTPUT_MODE === "v2") {
+    const plan = outcome.plan ?? fallbackPlan;
+    if (plan) {
+      const summary = formatStudyPlanSummary({
+        plan,
+        actions: outcome.actions ?? fallbackActions,
+      });
+      return outcome.resolveWarning ? `${summary}\n\n${outcome.resolveWarning}` : summary;
+    }
+  }
+  return turnResultBubbleContent(outcome, STUDY_COMPOUND_OUTPUT_MODE === "v1");
 }
 
 export default function ScenePage() {
@@ -1001,8 +1031,9 @@ export default function ScenePage() {
       const finalMessagePatch: Partial<ConversationMessage> = {
         status: "done",
         source: outcome.actions !== undefined ? "authoring" : "resolver",
-        content: turnResultBubbleContent(outcome, SIMPLE_COMPOUND_OUTPUT),
+        content: studyTurnResultContent(outcome, livePlan, semanticActions),
         details: turnResultDetails(outcome),
+        excludeFromModel: STUDY_COMPOUND_OUTPUT_MODE === "v2",
       };
       const applied = await commitOutcome(outcome, "chat", sentEdits, {
         source: "chat",
@@ -1134,6 +1165,20 @@ export default function ScenePage() {
     composerRef.current?.focus();
   }, []);
 
+  const handleRobotLabelPick = useCallback((pick: RobotIdentityLabelPick) => {
+    const id = crypto.randomUUID();
+    const ref: SceneContextRef = {
+      kind: "robot",
+      id,
+      name: pick.name,
+      bodyId: pick.bodyId,
+    };
+    setContextRefs((refs) => [...refs, ref]);
+    setSelectedBodyId(pick.bodyId);
+    composerRef.current?.insertToken(id, refLabel(ref), ref.kind);
+    composerRef.current?.focus();
+  }, []);
+
   // The composer is the source of truth for which tokens still exist; prune refs
   // a backspace/cut removed, preserving order.
   const handleRefsPresent = useCallback((ids: string[]) => {
@@ -1156,6 +1201,7 @@ export default function ScenePage() {
     (refId: string) => {
       const ref = contextRefs.find((r) => r.id === refId);
       if (ref?.kind === "object") setSelectedBodyId(ref.bodyId);
+      if (ref?.kind === "robot") setSelectedBodyId(ref.bodyId);
       if (ref?.kind === "facility") {
         const facility = manifest?.facilities?.[ref.name];
         const bodyName = facility?.body ?? facility?.place?.surface_body;
@@ -1509,8 +1555,9 @@ export default function ScenePage() {
         const finalMessagePatch: Partial<ConversationMessage> = {
           status: "done",
           source: "resolver",
-          content: turnResultBubbleContent(outcome, SIMPLE_COMPOUND_OUTPUT),
+          content: studyTurnResultContent(outcome, livePlan, semanticActions),
           details: turnResultDetails(outcome),
+          excludeFromModel: STUDY_COMPOUND_OUTPUT_MODE === "v2",
         };
         const applied = await commitOutcome(outcome, hasPendingEdits ? "edit" : "sync", sentEdits, {
           source: "sync",
@@ -1864,7 +1911,12 @@ export default function ScenePage() {
             >
               <SelectionHighlight bodyId={selectedBodyId} />
               <ScenePickController bodyIndex={bodyIndex} enabled={pickMode} onPick={handleScenePick} />
-              <RobotIdentityLabels />
+              {planSubtitlesEnabled || pickMode ? (
+                <RobotIdentityLabels
+                  pickEnabled={pickMode}
+                  onLabelPick={handleRobotLabelPick}
+                />
+              ) : null}
               {(planSubtitlesEnabled || pickMode) && manifest ? (
                 <SceneEntityLabels
                   manifest={manifest}
@@ -2136,35 +2188,38 @@ export default function ScenePage() {
                 onClick={() => setPlanSubtitlesEnabled((enabled) => !enabled)}
                 title={`${planSubtitlesEnabled ? "Hide" : "Show"} scene labels and robot task subtitles`}
               >
-                CC
+                Labels
               </button>
-              {draftPlan ? (
-                <>
-                <button
-                  type="button"
-                  className={pendingEditCount > 0 ? "gantt-btn-primary" : "gantt-icon-btn"}
-                  onClick={() => editTailSchedulerRef.current?.run()}
-                  disabled={
-                    turnBusy ||
-                    editTailStatus === "running" ||
-                    (pendingEditCount === 0 &&
-                      (status !== "ready" ||
-                        dirty ||
-                        !inSync ||
-                        (delegableConflictCount === 0 && !resolverNotConverged)))
-                  }
-                  title={
-                    pendingEditCount > 0
+              <button
+                type="button"
+                className={pendingEditCount > 0 ? "gantt-btn-primary" : "gantt-icon-btn"}
+                onClick={() => editTailSchedulerRef.current?.run()}
+                disabled={
+                  !draftPlan ||
+                  turnBusy ||
+                  editTailStatus === "running" ||
+                  (pendingEditCount === 0 &&
+                    (status !== "ready" ||
+                      dirty ||
+                      !inSync ||
+                      (delegableConflictCount === 0 && !resolverNotConverged)))
+                }
+                title={
+                  !draftPlan
+                    ? "Create a plan before applying edits"
+                    : pendingEditCount > 0
                       ? "Apply your pending edits and re-verify"
                       : resolverNotConverged
                         ? "Re-run resolve after a deferral"
                         : delegableConflictCount === 0
                           ? "No delegable path or facility conflicts"
                           : `Resolve ${delegableConflictCount} scheduling conflict(s)`
-                  }
-                >
-                  {editTailStatus === "running" ? "Syncing…" : "Sync"}
-                </button>
+                }
+              >
+                {editTailStatus === "running" ? "Applying…" : "Apply edits"}
+              </button>
+              {draftPlan ? (
+                <>
                 {manualEditBaselineRef.current && dirty ? (
                   <button
                     type="button"

@@ -8,7 +8,21 @@ import { colorForRobot } from "./robotVisuals";
 const LABEL_CLEARANCE = 0.28;
 const DISCOVERY_RETRY_SECONDS = 0.5;
 
-export function RobotIdentityLabels() {
+type RobotIdentityLabelsProps = {
+  pickEnabled?: boolean;
+  onLabelPick?: (pick: RobotIdentityLabelPick) => void;
+};
+
+export type RobotIdentityLabelPick = {
+  kind: "robot";
+  name: string;
+  bodyId: number;
+};
+
+export function RobotIdentityLabels({
+  pickEnabled = false,
+  onLabelPick,
+}: RobotIdentityLabelsProps) {
   const mujoco = useMujoco();
   const api = mujoco.isReady ? mujoco.api : null;
   const [anchors, setAnchors] = useState<RobotIdentityAnchor[]>([]);
@@ -80,10 +94,21 @@ export function RobotIdentityLabels() {
               else labelRefs.current.delete(anchor.robot);
             }}
           >
-            <Html center sprite distanceFactor={8} zIndexRange={[20, 0]}>
+            <Html center sprite zIndexRange={[20, 0]}>
               <div
-                className="robot-identity-label"
+                className={`robot-identity-label${pickEnabled ? " is-pickable" : ""}`}
                 style={{ "--robot-color": color } as CSSProperties}
+                onPointerDown={pickEnabled ? (event) => event.stopPropagation() : undefined}
+                onDoubleClick={pickEnabled ? (event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onLabelPick?.({
+                    kind: "robot",
+                    name: anchor.robot,
+                    bodyId: anchor.trackingBodyId,
+                  });
+                } : undefined}
+                title={pickEnabled ? `Reference ${anchor.robot}` : undefined}
               >
                 <span className="robot-identity-dot" />
                 {anchor.robot}

@@ -93,7 +93,7 @@ export async function runConversationTurn(args: RunTurnArgs): Promise<TurnOutcom
   // author: exclude non-author-tagged messages from model context (keep the
   // existing source !== "resolver" behavior, extended to "explain").
   const authorMessages: ChatMessage[] = args.messages
-    .filter((m) => m.source !== "resolver" && m.source !== "explain")
+    .filter((m) => !m.excludeFromModel && m.source !== "resolver" && m.source !== "explain")
     .map((m) => ({ role: m.role, content: m.content, source: m.source as ChatMessage["source"] }));
   const currentActions = applyRobotOverrides(args.semanticActions, args.draftPlan);
   const result = await requestAuthor(authorMessages, currentActions, { signal: args.signal });

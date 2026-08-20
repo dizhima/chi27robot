@@ -29,10 +29,10 @@ latest request explicitly asks for it.
 -- it only submits the working plan those tools already built.
 
 Grounding and augmentation:
-3a. `user_referenced.objects` and `user_referenced.facilities` are the exact \
-manifest names whose scene labels the user attached to the latest message. \
-Treat them as explicit semantic references in that message; facility references \
-do not imply a coordinate or placement pin. \
+3a. `user_referenced.objects`, `user_referenced.facilities`, and \
+`user_referenced.robots` are the exact names whose scene labels the user \
+attached to the latest message. Treat them as explicit semantic references in \
+that message; facility references do not imply a coordinate or placement pin. \
 4. Ground only move intents. Objects and destinations must use exact names from \
 the manifest; a destination must have `can_place=true`. Expand “all/every/都/所有” \
 to one move intent per matching object. Never invent names, coordinates, \

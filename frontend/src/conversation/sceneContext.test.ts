@@ -116,6 +116,12 @@ describe("labels + serialization", () => {
     id: "facility",
     name: "counter_left",
   };
+  const robotRef: SceneContextRef = {
+    kind: "robot",
+    id: "robot",
+    name: "robot0",
+    bodyId: 12,
+  };
   const floorPin: SceneContextRef = {
     kind: "position",
     id: "c",
@@ -131,15 +137,18 @@ describe("labels + serialization", () => {
     expect(refText(objectRef)).toBe("mug_1");
     expect(refLabel(facilityRef)).toBe("counter_left");
     expect(refText(facilityRef)).toBe("counter_left");
+    expect(refLabel(robotRef)).toBe("robot0");
+    expect(refText(robotRef)).toBe("robot0");
     expect(refLabel(facilityPin)).toBe("counter_left");
     expect(refText(facilityPin)).toBe("counter_left");
     expect(refText(floorPin)).toBe("the marked location");
   });
 
   it("serializes to snake_case author-aligned shapes", () => {
-    expect(serializeRefs([objectRef, facilityRef, facilityPin, floorPin])).toEqual([
+    expect(serializeRefs([objectRef, facilityRef, robotRef, facilityPin, floorPin])).toEqual([
       { kind: "object", name: "mug_1", body: "mug_1_main", body_id: 3, world_pos: [1, 2, 3] },
       { kind: "facility", name: "counter_left" },
+      { kind: "robot", name: "robot0" },
       {
         kind: "position",
         xyz: [4, 5, 6],
@@ -171,26 +180,28 @@ describe("labels + serialization", () => {
     };
 
     it("assigns p1/p2 in document order to bindable positions only, skipping objects and null-facility pins", () => {
-      const handles = assignPinHandles([objectRef, facilityRef, facilityPin, floorPin, sinkPin]);
+      const handles = assignPinHandles([objectRef, facilityRef, robotRef, facilityPin, floorPin, sinkPin]);
       expect(handles.get(facilityPin.id)).toBe("p1");
       expect(handles.get(sinkPin.id)).toBe("p2");
       expect(handles.has(objectRef.id)).toBe(false);
       expect(handles.has(facilityRef.id)).toBe(false);
+      expect(handles.has(robotRef.id)).toBe(false);
       expect(handles.has(floorPin.id)).toBe(false);
       expect(handles.size).toBe(2);
     });
 
     it("threads into serializeRefs: handle present for bindable pins, absent for objects and null-facility pins", () => {
       const handles = assignPinHandles([facilityPin, floorPin, sinkPin]);
-      const serialized = serializeRefs([objectRef, facilityRef, facilityPin, floorPin, sinkPin], handles) as Record<
+      const serialized = serializeRefs([objectRef, facilityRef, robotRef, facilityPin, floorPin, sinkPin], handles) as Record<
         string,
         unknown
       >[];
       expect(serialized[0].handle).toBeUndefined(); // object
       expect(serialized[1].handle).toBeUndefined(); // facility ref
-      expect(serialized[2].handle).toBe("p1"); // facilityPin
-      expect(serialized[3].handle).toBeUndefined(); // floorPin
-      expect(serialized[4].handle).toBe("p2"); // sinkPin
+      expect(serialized[2].handle).toBeUndefined(); // robot ref
+      expect(serialized[3].handle).toBe("p1"); // facilityPin
+      expect(serialized[4].handle).toBeUndefined(); // floorPin
+      expect(serialized[5].handle).toBe("p2"); // sinkPin
     });
 
     it("omits handle fields entirely when serializeRefs is called without a handles map (back-compat)", () => {

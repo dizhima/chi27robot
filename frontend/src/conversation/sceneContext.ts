@@ -35,6 +35,16 @@ export type SceneFacilityRef = {
   name: string;
 };
 
+/** A semantic robot reference created by double-clicking a robot label. */
+export type SceneRobotRef = {
+  kind: "robot";
+  id: string;
+  /** Exact scene robot namespace, e.g. "robot0". */
+  name: string;
+  /** Tracking body used only for local highlight/focus. */
+  bodyId: number;
+};
+
 export type ScenePositionRef = {
   kind: "position";
   id: string;
@@ -48,7 +58,7 @@ export type ScenePositionRef = {
   bodyName: string;
 };
 
-export type SceneContextRef = SceneObjectRef | SceneFacilityRef | ScenePositionRef;
+export type SceneContextRef = SceneObjectRef | SceneFacilityRef | SceneRobotRef | ScenePositionRef;
 
 /** Attribution of a hit body to a manifest entity. */
 export type BodyAttribution =
@@ -123,6 +133,7 @@ export function refFromPick(
 
 /** Short token label (the component adds the 📍 glyph for positions). */
 export function refLabel(ref: SceneContextRef): string {
+  if (ref.kind === "robot") return ref.name;
   if (ref.kind === "facility") return ref.name;
   if (ref.kind === "object") return ref.name || ref.body || `body ${ref.bodyId}`;
   return ref.onFacility ?? ref.onObject ?? "spot";
@@ -132,6 +143,7 @@ export function refLabel(ref: SceneContextRef): string {
  *  author eventually reads): a manifest name, or a neutral phrase for a
  *  free-floating floor/wall point. */
 export function refText(ref: SceneContextRef): string {
+  if (ref.kind === "robot") return ref.name;
   if (ref.kind === "facility") return ref.name;
   if (ref.kind === "object") return ref.name || ref.body;
   return ref.onFacility ?? ref.onObject ?? "the marked location";
@@ -162,6 +174,7 @@ export function serializeRefs(refs: SceneContextRef[], handles?: Map<string, str
     if (ref.kind === "object") {
       return { kind: "object", name: ref.name, body: ref.body, body_id: ref.bodyId, world_pos: ref.worldPos };
     }
+    if (ref.kind === "robot") return { kind: "robot", name: ref.name };
     if (ref.kind === "facility") return { kind: "facility", name: ref.name };
     return {
       kind: "position",

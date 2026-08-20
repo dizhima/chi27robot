@@ -85,7 +85,7 @@ Python services.
 The following data is not required for a clean first launch of the default study:
 
 - `frontend/public/trajectories/layout042_study/tracks/_generated/`: generated
-  plan cache; the skill service recreates it
+  plan cache; the backend clears it on startup and the skill service recreates it
 - `tracks/_backups/`: development backups
 - raw demonstration folders directly under
   `trajectories/layout042_study/robot0/` and `robot1/`: only needed when rebuilding
