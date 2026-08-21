@@ -180,23 +180,41 @@ export async function streamConversationTurn(
   // Same context filter as runConversationTurn/Phase 1-3: exclude
   // resolver/explain-tagged messages from Author's (and now the shared
   // unified) context.
-  const authorMessages: ChatMessage[] = args.messages
-    .filter((m) => !m.excludeFromModel && m.source !== "resolver" && m.source !== "explain")
-    .map((m) => ({ role: m.role, content: m.content, source: m.source as ChatMessage["source"] }));
-  const currentActions = applyRobotOverrides(args.semanticActions, args.draftPlan);
+  const statelessAuthoring = args.statelessAuthoring === true && args.intentHint === null;
+  const authorMessages: ChatMessage[] = statelessAuthoring
+    ? [{ role: "user", content: args.text }]
+    : args.messages
+        .filter((m) => !m.excludeFromModel && m.source !== "resolver" && m.source !== "explain")
+        .map((m) => ({ role: m.role, content: m.content, source: m.source as ChatMessage["source"] }));
+  const currentActions = statelessAuthoring
+    ? []
+    : applyRobotOverrides(args.semanticActions, args.draftPlan);
 
-  const planState = {
-    status: args.gate.status,
-    dirty: args.gate.dirty,
-    in_sync: args.gate.inSync,
-    delegable_conflict_count: args.gate.delegableConflictCount,
-    completed_plan: args.completed,
-    compile_id: args.compileId,
-    draft_plan: args.draftPlan,
-    conflicts: args.conflicts ?? [],
-    warnings: args.warnings ?? [],
-    last_resolver_report: args.lastResolverReport ?? null,
-  };
+  const planState = statelessAuthoring
+    ? {
+        status: "idle",
+        dirty: false,
+        in_sync: false,
+        delegable_conflict_count: 0,
+        completed_plan: {},
+        compile_id: null,
+        draft_plan: null,
+        conflicts: [],
+        warnings: [],
+        last_resolver_report: null,
+      }
+    : {
+        status: args.gate.status,
+        dirty: args.gate.dirty,
+        in_sync: args.gate.inSync,
+        delegable_conflict_count: args.gate.delegableConflictCount,
+        completed_plan: args.completed,
+        compile_id: args.compileId,
+        draft_plan: args.draftPlan,
+        conflicts: args.conflicts ?? [],
+        warnings: args.warnings ?? [],
+        last_resolver_report: args.lastResolverReport ?? null,
+      };
 
   let response: Response;
   try {
@@ -210,19 +228,21 @@ export async function streamConversationTurn(
         current_actions: currentActions,
         plan_state: planState,
         scene_refs: serializeRefs(args.sceneRefs ?? [], args.sceneRefHandles),
-        plan_refs: serializePlanRefs(args.planRefs ?? [], args.planRefHandles),
+        plan_refs: statelessAuthoring
+          ? []
+          : serializePlanRefs(args.planRefs ?? [], args.planRefHandles),
         // D1b: the frontend's `livePlan`, so the backend can promote a pure
         // append onto it (decompose.merge_appended_tasks) instead of paying
         // to re-resolve conflicts this turn's plan already had fixed.
-        previous_plan: args.previousPlan ?? null,
+        previous_plan: statelessAuthoring ? null : (args.previousPlan ?? null),
         base_revision: args.baseRevision,
         // S3 (compound_turn_integration_spec.md §5 item 16): the accumulated
         // manual-edit deltas, replayed server-side onto the freshly
         // decomposed authored plan (D2), plus the protected set derived from
         // them (threaded into the resolver's pin-veto matrix). Both default
         // to empty for every pre-S3 caller.
-        edits: args.edits ?? [],
-        protected: args.protected ?? {},
+        edits: statelessAuthoring ? [] : (args.edits ?? []),
+        protected: statelessAuthoring ? {} : (args.protected ?? {}),
       }),
       signal: args.signal,
     });

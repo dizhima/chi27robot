@@ -1,10 +1,11 @@
 import { Html } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import type { Group } from "three";
+import { Vector3, type Group } from "three";
 import { useMujoco } from "mujoco-react";
 import { discoverRobotIdentityAnchors, type RobotIdentityAnchor } from "./robotIdentities";
 import { colorForRobot } from "./robotVisuals";
+import { cappedLabelZoomScale } from "./labelZoom";
 const LABEL_CLEARANCE = 0.28;
 const DISCOVERY_RETRY_SECONDS = 0.5;
 
@@ -27,6 +28,8 @@ export function RobotIdentityLabels({
   const api = mujoco.isReady ? mujoco.api : null;
   const [anchors, setAnchors] = useState<RobotIdentityAnchor[]>([]);
   const labelRefs = useRef(new Map<string, Group>());
+  const labelElementRefs = useRef(new Map<string, HTMLDivElement>());
+  const worldPositionRef = useRef(new Vector3());
   const modelRef = useRef<unknown>(null);
   const nextDiscoveryAtRef = useRef(0);
 
@@ -43,7 +46,7 @@ export function RobotIdentityLabels({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
 
-  useFrame(({ clock }) => {
+  useFrame(({ camera, clock }) => {
     if (!mujoco.isReady) return;
     const model = mujoco.mjModelRef.current;
     const modelChanged = model !== modelRef.current;
@@ -79,6 +82,12 @@ export function RobotIdentityLabels({
         xpos[trackingOffset + 1],
         top + LABEL_CLEARANCE,
       );
+      const element = labelElementRefs.current.get(anchor.robot);
+      if (element) {
+        label.getWorldPosition(worldPositionRef.current);
+        const scale = cappedLabelZoomScale(camera.position.distanceTo(worldPositionRef.current));
+        element.style.setProperty("--label-zoom-scale", scale.toFixed(3));
+      }
     }
   });
 
@@ -96,6 +105,10 @@ export function RobotIdentityLabels({
           >
             <Html center sprite zIndexRange={[20, 0]}>
               <div
+                ref={(node) => {
+                  if (node) labelElementRefs.current.set(anchor.robot, node);
+                  else labelElementRefs.current.delete(anchor.robot);
+                }}
                 className={`robot-identity-label${pickEnabled ? " is-pickable" : ""}`}
                 style={{ "--robot-color": color } as CSSProperties}
                 onPointerDown={pickEnabled ? (event) => event.stopPropagation() : undefined}

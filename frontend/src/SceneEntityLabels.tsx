@@ -1,13 +1,14 @@
 import { Html } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useRef, useState } from "react";
-import type { Group } from "three";
+import { Vector3, type Group } from "three";
 import { useMujoco } from "mujoco-react";
 import type { SceneManifest } from "./authoring/types";
 import {
   discoverSceneEntityLabelAnchors,
   type SceneEntityLabelAnchor,
 } from "./sceneEntityLabelModel";
+import { cappedLabelZoomScale } from "./labelZoom";
 
 const OBJECT_LABEL_CLEARANCE = 0.22;
 const DISCOVERY_RETRY_SECONDS = 0.5;
@@ -39,6 +40,8 @@ export function SceneEntityLabels({
   const api = mujoco.isReady ? mujoco.api : null;
   const [anchors, setAnchors] = useState<SceneEntityLabelAnchor[]>([]);
   const labelRefs = useRef(new Map<string, Group>());
+  const labelElementRefs = useRef(new Map<string, HTMLDivElement>());
+  const worldPositionRef = useRef(new Vector3());
   const modelRef = useRef<unknown>(null);
   const nextDiscoveryAtRef = useRef(0);
 
@@ -48,7 +51,7 @@ export function SceneEntityLabels({
       onLabelPick({ kind: "facility", name: anchor.name });
       return;
     }
-    const group = labelRefs.current.get(anchor.name);
+    const group = labelRefs.current.get(`object:${anchor.name}`);
     if (!group) return;
     onLabelPick({
       kind: "object",
@@ -73,7 +76,7 @@ export function SceneEntityLabels({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, manifest, showObjects]);
 
-  useFrame(({ clock }) => {
+  useFrame(({ camera, clock }) => {
     if (!mujoco.isReady) return;
     const model = mujoco.mjModelRef.current;
     if (model !== modelRef.current) {
@@ -89,15 +92,23 @@ export function SceneEntityLabels({
     const xpos = mujoco.mjDataRef.current?.xpos;
     if (!xpos) return;
     for (const anchor of anchors) {
-      if (anchor.kind !== "object") continue;
-      const label = labelRefs.current.get(anchor.name);
+      const key = `${anchor.kind}:${anchor.name}`;
+      const label = labelRefs.current.get(key);
       if (!label) continue;
-      const offset = anchor.bodyId * 3;
-      label.position.set(
-        xpos[offset],
-        xpos[offset + 1],
-        xpos[offset + 2] + OBJECT_LABEL_CLEARANCE,
-      );
+      if (anchor.kind === "object") {
+        const offset = anchor.bodyId * 3;
+        label.position.set(
+          xpos[offset],
+          xpos[offset + 1],
+          xpos[offset + 2] + OBJECT_LABEL_CLEARANCE,
+        );
+      }
+      const element = labelElementRefs.current.get(key);
+      if (element) {
+        label.getWorldPosition(worldPositionRef.current);
+        const scale = cappedLabelZoomScale(camera.position.distanceTo(worldPositionRef.current));
+        element.style.setProperty("--label-zoom-scale", scale.toFixed(3));
+      }
     }
   });
 
@@ -108,13 +119,18 @@ export function SceneEntityLabels({
           key={`${anchor.kind}:${anchor.name}`}
           position={anchor.kind === "facility" ? anchor.position : undefined}
           ref={(node) => {
-            if (anchor.kind !== "object") return;
-            if (node) labelRefs.current.set(anchor.name, node);
-            else labelRefs.current.delete(anchor.name);
+            const key = `${anchor.kind}:${anchor.name}`;
+            if (node) labelRefs.current.set(key, node);
+            else labelRefs.current.delete(key);
           }}
         >
           <Html center sprite zIndexRange={[19, 0]}>
             <div
+              ref={(node) => {
+                const key = `${anchor.kind}:${anchor.name}`;
+                if (node) labelElementRefs.current.set(key, node);
+                else labelElementRefs.current.delete(key);
+              }}
               className={`scene-entity-label is-${anchor.kind}${pickEnabled ? " is-pickable" : ""}`}
               onPointerDown={pickEnabled ? (event) => event.stopPropagation() : undefined}
               onDoubleClick={pickEnabled ? (event) => {

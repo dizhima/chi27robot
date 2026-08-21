@@ -1181,11 +1181,13 @@ canvas {
     0 5px 16px rgba(0, 0, 0, 0.34),
     0 0 14px color-mix(in srgb, var(--robot-color) 28%, transparent);
   color: #f7fafc;
-  font: 700 12px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  font: 700 15px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
   letter-spacing: 0.02em;
   white-space: nowrap;
   user-select: none;
   pointer-events: none;
+  transform: scale(var(--label-zoom-scale, 1));
+  transform-origin: center;
 }
 
 .robot-identity-label.is-pickable {
@@ -1212,11 +1214,13 @@ canvas {
   background: rgba(10, 14, 18, 0.84);
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
   color: #f7fafc;
-  font: 650 12px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  font: 650 15px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
   letter-spacing: 0.015em;
   white-space: nowrap;
   user-select: none;
   pointer-events: none;
+  transform: scale(var(--label-zoom-scale, 1));
+  transform-origin: center;
 }
 
 .scene-entity-label.is-facility {

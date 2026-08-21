@@ -145,4 +145,4 @@ We extended the library to load precompiled MuJoCo binary models (\texttt{.mjb})
 % Before binary compilation, we downsample the scene's web textures to at most 512 pixels per dimension, reducing their embedded texture memory by approximately fourfold and allowing full kitchen scenes to load within browser WebAssembly memory limits.
 The backend is implemented in Python.
 We use GPT-5.6-Terra as the underlying language model for tool-based plan authoring.
-On our laptop without a discrete GPU, per-step compilation latency was under one second for most steps, while some pick and place steps took up to five seconds because they required collision-checked motion search, including multi-seed inverse kinematics and, for reach-in placements, a bidirectional rapidly exploring random tree search.
+On our desktop machine with an NVIDIA DGX Spark platform, per-step compilation latency was under one second.

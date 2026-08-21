@@ -5,7 +5,7 @@
 
 We conducted a two-phase user study to investigate how structured plan context supports users in revising an evolving multi-robot plan.
 The two phases correspond to two intent regimes.
-In the first phase, participants knew exactly what outcome they wanted: given a target execution shown as a captioned video, they had to revise the current plan to reproduce it, and we evaluate \oursystem{} against a baseline without structured plan context.
+In the first phase, participants knew exactly what outcome they wanted: given a target execution shown as a captioned video, they had to revise the current plan to reproduce it, and we evaluate \oursystem{} against a stateless natural-language (NL) planning baseline without structured plan context.
 In the second phase, participants had no fixed outcome in mind: they used the full system to explore and adjust a plan to their own preferences, and we evaluate overall usability and user experience.
 The study lasted around 80 minutes and was approved by our organization's internal review board.
 
@@ -21,13 +21,13 @@ Participants received \$50 after the study.
 We compared two methods that shared the same underlying language model, planning pipeline, coordination mechanisms, simulated environment, and execution capabilities.
 The conditions differed in whether the current multi-robot plan was exposed as structured interaction context.
 Both conditions ran on the same interface, and participants could replay the simulated execution of the current plan at any time.
-In our condition, the current plan's task assignments and ordering were exposed through the interactive Gantt timeline; in the baseline, the timeline and task-reference functionality were hidden, and the same task-level information was instead conveyed through a concise example prompt.
+In our condition, the current plan's task assignments and ordering were exposed through the interactive Gantt timeline; in the stateless NL planning baseline, the timeline and task-reference functionality were hidden, and the same task-level information was instead conveyed through a concise example prompt.
 
-\paragraph{Autonomous Planning Baseline.}
+\paragraph{Stateless Natural-Language Planning Baseline.}
 
-The baseline used the same underlying planning and execution pipeline as our system, but hid the Gantt timeline visualization and plan-reference functionality.
+The stateless NL planning baseline used the same underlying planning and execution pipeline as our system, but hid the Gantt timeline visualization and plan-reference functionality.
 At the beginning of each round, participants received a study-authored example prompt that concisely described the current plan's per-robot tasks and ordering.
-This prompt conveyed the same task-level assignment and ordering information available in our Gantt visualization, allowing baseline participants to understand the current plan without having to reconstruct it solely from the execution replay.
+This prompt conveyed the same task-level assignment and ordering information available in our Gantt visualization, allowing participants in the baseline condition to understand the current plan without having to reconstruct it solely from the execution replay.
 Each planning request was treated as a self-contained task specification, and the previously generated plan was not provided to the language model as structured context for subsequent requests.
 Participants could use the example prompt as a starting point, but when revising the plan they still needed to provide a complete revised task specification that encoded both the requested change and the existing task decisions that should be preserved.
 The system then autonomously generated a new multi-robot plan from this revised specification.
@@ -51,7 +51,7 @@ The resulting revision was applied to the existing plan, which then became the s
 Participants provided informed consent and completed a questionnaire about their demographic and relevant technical background.
 
 \paragraph{Phase 1 (40 min)}
-In the first phase, we compared our plan-contextualized co-authoring interface with an autonomous planning baseline.
+In the first phase, we compared our plan-contextualized co-authoring interface with the stateless NL planning baseline.
 Each participant completed two multi-robot household tasks, using one condition for each task.
 Participants completed the kitchen-island sorting task first and the breakfast-preparation task second.
 The assignment of conditions to the two tasks was counterbalanced across participants.
@@ -61,7 +61,7 @@ After completing each condition, participants filled out a brief post-condition 
 
 \paragraph{Phase 2 (20 min)}
 In the second phase, we assessed the overall usability of the full system through free-form use.
-Each participant worked in the scenario they had completed under the \emph{baseline} condition in Phase 1.
+Each participant worked in the scenario they had completed under the \emph{stateless NL planning} condition in Phase 1.
 Participants authored their own plan and then adjusted it to their own preferences, thinking aloud throughout.
 A set of preference-framed prompt cards (e.g., arranging placements, keeping robots out of a region, adjusting who does what and in which order, adding an item) ensured that each capability had an occasion to be used, without prescribing which input channel --- language or direct manipulation --- to use.
 
@@ -86,7 +86,7 @@ Each round specified the desired resulting plan, while participants could decide
 Each target differed from the current plan through a controlled combination of one or two newly introduced object-manipulation tasks and changes to task ordering or robot assignment.
 The initial and canonical target plans were generated in advance using the same planning pipeline and saved for use across study sessions.
 At the beginning of each scenario, the initial plan was loaded into the assigned interface.
-The original prompts used to generate the saved plans were never shown to participants; instead, in the baseline condition, participants received standardized study-authored example prompts that summarized the current plans at the same task-assignment and ordering level exposed by the Gantt visualization in our condition.
+The original prompts used to generate the saved plans were never shown to participants; instead, in the stateless NL planning condition, participants received standardized study-authored example prompts that summarized the current plans at the same task-assignment and ordering level exposed by the Gantt visualization in our condition.
 Participants played the initial plan once in the simulator to familiarize themselves with its execution and could replay the current plan through the interface as needed.
 
 In each round, participants viewed a separate video of the target plan's execution and revised the current plan until it reproduced that target.
@@ -179,9 +179,9 @@ The full initial and target plan specifications appear in \autoref{app:revision-
 %   Phase 1 used fixed initial plans), (2) Gantt direct manipulation (drag reorder/reallocate),
 %   (3) scene-level fine-tuning (waypoints, placements — formative P8), (4) free use of
 %   plan-reference and scene-reference chips.
-% - Scenario = the participant's Phase-1 BASELINE scenario (counterbalanced, so half sorting /
+% - Scenario = the participant's Phase-1 STATELESS NL PLANNING scenario (counterbalanced, so half sorting /
 %   half breakfast): familiar task semantics, but full system is fresh in it; enables
-%   spontaneous baseline-vs-full-system comparisons in think-aloud.
+%   spontaneous stateless-NL-vs-full-system comparisons in think-aloud.
 % - Prompt cards adapted per scenario (placement card: aesthetic framing for breakfast,
 %   practical framing for sorting); walkthrough first so non-use of a feature is a choice,
 %   not ignorance.
@@ -209,4 +209,4 @@ The full initial and target plan specifications appear in \autoref{app:revision-
 % 5. The scene controls made it easy to adjust object placements.
 %
 % - Think-aloud + interview themes: which revisions users prefer to say vs. drag, and why;
-%   do NOT frame interview questions as baseline comparisons (demand characteristics).
+%   do NOT frame interview questions as stateless-NL-vs-full-system comparisons (demand characteristics).

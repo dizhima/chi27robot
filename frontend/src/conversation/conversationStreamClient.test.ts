@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { streamConversationTurn, type StreamEvent } from "./conversationStreamClient";
 import { runConversationTurn } from "./conversationRunner";
-import { applyRobotOverrides } from "../plan/authorPlan";
+import { applyRobotOverrides, type AugmentedAction } from "../plan/authorPlan";
 import { commitTurnResult, revertToHistoryNode, type LiveState } from "../plan/turnState";
 import { EMPTY_VERSION_HISTORY, appendPlanVersion, snapshotForVersion } from "../plan/versionHistory";
 import type { ConversationMessage } from "./conversationTypes";
@@ -268,6 +268,85 @@ describe("streamConversationTurn", () => {
     expect(body.protected).toEqual({});
     expect(body.edits).toEqual([]);
     expect(body.plan_refs).toEqual([]);
+  });
+
+  it("makes v2 baseline authoring stateless while preserving scene grounding", async () => {
+    const fetchMock = mockFetchWithStream(streamFromChunks(eventLines()));
+    const oldPlan: AuthoredPlan = {
+      tasks: [{ task: "old-task", robot: "robot0", steps: [] }],
+    };
+    const oldActions: AugmentedAction[] = [
+      { id: "old-action", robot: "robot0", op: "move" },
+    ];
+    const messages: ConversationMessage[] = [
+      { id: "u0", role: "user", content: "old instruction" },
+      { id: "a0", role: "assistant", content: "old plan result", source: "authoring" },
+      { id: "u1", role: "user", content: "complete new task specification" },
+    ];
+
+    await streamConversationTurn(
+      {
+        ...baseArgs,
+        text: "complete new task specification",
+        intentHint: null,
+        statelessAuthoring: true,
+        messages,
+        semanticActions: oldActions,
+        draftPlan: oldPlan,
+        previousPlan: oldPlan,
+        completed: { robot0: oldPlan.tasks[0].steps },
+        compileId: "old-compile",
+        conflicts: [{ id: "old-conflict" }],
+        warnings: [{ id: "old-warning" }],
+        lastResolverReport: { converged: true },
+        planRefs: [{
+          kind: "plan_task",
+          id: "old-ref",
+          actionId: "old-action",
+          label: "old task",
+          robot: "robot0",
+          op: "move",
+        }],
+        sceneRefs: [{ kind: "facility", id: "scene-object", name: "fridge" }],
+        edits: [{
+          op: "move_task",
+          target: { actionId: "old-task" },
+          robot: "robot1",
+          afterActionId: null,
+        }],
+        protected: {
+          allocations: [{ group: "old-task", robot: "robot0" }],
+          orderings: [],
+          destinations: [],
+          waypoints: [],
+        },
+      },
+      () => {},
+    );
+
+    expect(mockApplyRobotOverrides).not.toHaveBeenCalled();
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.messages).toEqual([
+      { role: "user", content: "complete new task specification" },
+    ]);
+    expect(body.current_actions).toEqual([]);
+    expect(body.previous_plan).toBeNull();
+    expect(body.plan_refs).toEqual([]);
+    expect(body.edits).toEqual([]);
+    expect(body.protected).toEqual({});
+    expect(body.plan_state).toEqual({
+      status: "idle",
+      dirty: false,
+      in_sync: false,
+      delegable_conflict_count: 0,
+      completed_plan: {},
+      compile_id: null,
+      draft_plan: null,
+      conflicts: [],
+      warnings: [],
+      last_resolver_report: null,
+    });
+    expect(body.scene_refs).toHaveLength(1);
   });
 
   it("serializes semantic plan refs separately from scene_refs", async () => {

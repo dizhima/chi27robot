@@ -64,6 +64,10 @@ export type RunTurnArgs = {
    *  `edits` via `buildProtectedSet`, threaded into the resolver's pin-veto
    *  matrix. Defaults to an empty set. */
   protected?: ProtectedSet;
+  /** Study baseline mode: a typed authoring turn must be derived from this
+   *  turn's prompt alone. The stream client strips every prior-plan and
+   *  conversation-history field while retaining scene grounding. */
+  statelessAuthoring?: boolean;
 };
 
 /** Phase 1 deterministic routing: hint === "resolve" -> resolve, else author. */

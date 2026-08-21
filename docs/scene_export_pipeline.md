@@ -487,18 +487,22 @@ the difficult lower waypoint. The OpenFridge regression separately asserts
 that both robots finish contact-free and admit a linear reset. These are better
 gates than a screenshot or standalone canonical replay alone.
 
-## 10. layout024 / layout038: available replay skills (verified 2026-08-17)
+## 10. Candidate replay skills: layout024 / 038 / 034 / 050
 
 Ground truth extracted from `datasets/v1.0/pretrain/atomic/atomic_layout_summary.json`
-+ each episode's `ep_meta.json` (`fixture_refs`). Every target fixture below was
-verified to exist WITH its joints in the current decoration-stripped exports
-(`layout024_sorting.xml` style 45 / `layout038_study.xml` style 58). Replays do
-re-simulate on the target export, but style compatibility still requires a
-geometry/semantics audit: side-by-side refrigerator variants can assign the
-same `freezer_door` / `fridge_door` names to opposite physical sides. The formal
-024 sorting scene therefore uses ep88's own style 45. `idx` is the
-`--episode-index` for `replay_atomic_on_scene` (position in the sorted
-episode_ids of that task+layout).
++ each episode's `ep_meta.json` (`fixture_refs`). The 024/038 target fixtures
+were verified to exist WITH their joints in the current decoration-stripped
+exports (`layout024_sorting.xml` style 45 / `layout038_study.xml` style 58) on
+2026-08-17. Layouts 034/050 were added as promising candidates on 2026-08-20:
+their dataset coverage and refrigerator state trajectories were audited, but
+they do **not** yet have decoration-stripped exports, fixture-survival checks,
+reachability calibration, or target-scene replays. Replays do re-simulate on
+the target export, but style compatibility still requires a geometry/semantics
+audit: refrigerator variants can change handle geometry or assign the same
+door names to different physical sides. The formal 024 sorting scene therefore
+uses ep88's own style 45. `idx` is the `--episode-index` for
+`replay_atomic_on_scene` (position in the sorted episode_ids of that
+task+layout).
 
 ### How to query replay availability for ANY layout (the method behind these tables)
 
@@ -549,6 +553,36 @@ All data lives under the atomic dataset root
    `--reverse` of Open (and vice versa); a twin fixture elsewhere can donate via
    `--retarget` (tool self-checks admissibility; differently-facing hinge
    cabinets are rejected by design).
+
+### layout034 / layout050 — promising double-door candidates (2026-08-20)
+
+Both layouts have an island and a sink, pass the coarse coverage gate
+(fridge/drawer/cabinet each have at least one atomic demo), and rank near the
+top of `analyze_layout_candidates.py` by conversion complexity. They remain
+**candidates**, not validated study scenes.
+
+| Layout | complexity score | fridge O/C | drawer O/C | cabinet O/C |
+|---|---:|---:|---:|---:|
+| 034 | 71 | 1/2 | 2/2 | 2/1 |
+| 050 | 76 | 2/7 | 4/4 | 2/2 |
+
+Their refrigerator fixture is `fridgefrenchdoor_left_group_1`. Direct
+inspection of every source `states.npz` against its episode `model.xml.gz`
+confirmed that every listed Open/Close demo moves **both** upper refrigerator
+door joints by about 1.45–1.57 rad; the freezer doors/drawers remain closed.
+
+| Layout | Task | idx | episode(s) | source style(s) | observed door motion |
+|---|---|---|---|---|---|
+| 034 | OpenFridge | 0 | ep58 | 48 | left + right open |
+| 034 | CloseFridge | 0–1 | ep9 / ep46 | 36 / 47 | left + right close |
+| 050 | OpenFridge | 0–1 | ep1 / ep66 | 20 / 25 | left + right open |
+| 050 | CloseFridge | 0–6 | ep17/36/39/72/79/81/104 | 13/28/45/16/14/45/50 | left + right close |
+
+Recommended continuity policy: choose one OpenFridge episode after reviewing
+its matching style/handle geometry, then synthesize CloseFridge as its strict
+reverse instead of pairing independently recorded endpoints. Before promoting
+either layout, strip/export it and perform the fixture, articulation,
+reachability, and target-scene replay gates in §4.
 
 ### layout024 — rich coverage, zero synthesis required for coverage
 

@@ -1393,6 +1393,10 @@ export default function ScenePage() {
         // stream_compound_turn's docstring).
         edits: sentEdits,
         protected: buildProtectedSet(sentEdits, livePlan),
+        // In the baseline condition, v2 means each chat prompt authors a
+        // complete plan from scratch. The stream client keeps scene refs but
+        // removes transcript history and all prior-plan state.
+        statelessAuthoring: STUDY_COMPOUND_OUTPUT_MODE === "v2",
       },
       onEvent,
     )
