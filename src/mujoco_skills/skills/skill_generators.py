@@ -691,15 +691,21 @@ def _rest_obj_pose(rig, obj):
 
 def _rest_support_clearance(rig, obj):
     """Height of an object's body origin above whatever it rests on in the
-    initial (qpos0) scene — a ray dropped straight down from the origin, ignoring
-    the object's own geoms. Placing the origin this far above a target surface
-    reproduces the object's rest appearance exactly, so a placed object sits just
-    like it did on the counter. This sidesteps guessing the mesh bottom: geom
+    authored initial scene — a ray dropped straight down from the origin,
+    ignoring the object's own geoms.  A baked ``study_init`` keyframe takes
+    precedence over qpos0 because objects authored inside an initially-open
+    drawer/cabinet are positioned relative to that open fixture.  Measuring
+    them against the closed qpos0 fixture can make the ray hit structure far
+    below the object and turn a centimetre-scale clearance into ~0.7 m.
+
+    Placing the origin this far above a target surface reproduces the object's
+    rest appearance exactly. This sidesteps guessing the mesh bottom: geom
     AABBs aren't tight for these meshes (they read ~1-3 cm low and differ per
     object, which is what left placements floating by different amounts)."""
     m, d = rig.model, rig.data
     saved = d.qpos.copy()
-    d.qpos[:] = m.qpos0
+    key = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_KEY, "study_init")
+    d.qpos[:] = m.key_qpos[key] if key >= 0 else m.qpos0
     mujoco.mj_forward(m, d)
     bid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, f"{obj}_main")
     o = d.xpos[bid].copy()
@@ -1173,7 +1179,8 @@ HORIZONTAL_GRASP_Z_OFFSET_BY_OBJECT = {
 
 
 def gen_pick(rig, q_start, obj_name, label=None, grasp_mode="top_down",
-             return_to_ready=True, grasp_offset=None, post_grasp_lift=0.0):
+             return_to_ready=True, grasp_offset=None, post_grasp_lift=0.0,
+             ready_torso=None):
     """Pick with either a vertical top-down or horizontal side approach.
 
     top_down (default): ready -> above -> descend -> close -> ready.
@@ -1187,6 +1194,16 @@ def gen_pick(rig, q_start, obj_name, label=None, grasp_mode="top_down",
     label = label or f"pick_{obj_name}"
     ready_q = q_start.copy()
     rig.apply_ready(ready_q)
+    if ready_torso is not None:
+        torso = float(ready_torso)
+        torso_joint = mujoco.mj_name2id(
+            rig.model, mujoco.mjtObj.mjOBJ_JOINT,
+            f"mobilebase{rig.robot}_joint_torso_height")
+        torso_range = rig.model.jnt_range[torso_joint]
+        if not np.isfinite(torso) or torso < torso_range[0] or torso > torso_range[1]:
+            raise ValueError(
+                f"ready_torso must be in [{torso_range[0]}, {torso_range[1]}]")
+        ready_q[rig.TORSO] = torso
     rig.set_fingers(ready_q, rig.finger_open)
     # body_xy reads MuJoCo's live data, so synchronize it to this step's actual
     # threaded state. Otherwise a preceding planner's final collision probe can
@@ -2924,7 +2941,19 @@ def _pinned_surface_standoff(rig, facility, next_step, q,
     if not isinstance(anchor, (list, tuple)) or len(anchor) < 2:
         return None
     result = standoff_for_point(rig, anchor[:2], working_q=q)
-    return result if result.get("feasible") else None
+    if result.get("feasible"):
+        return result
+    # An explicit user pin is an exact spatial request. Falling back to the
+    # facility's generic midpoint stance when that pin has no reachable stance
+    # lets place IK silently saturate and produces an object suspended near the
+    # gripper instead of at the pin. Reject the request clearly; automatic
+    # slots retain their historical generic-standoff fallback.
+    if next_step.get("at_anchor") is not None:
+        xy = [round(float(value), 3) for value in anchor[:2]]
+        raise ValueError(
+            f"pinned place on '{facility}' at {xy} has no reachable robot "
+            f"standoff: {result.get('reason', 'unknown reason')}")
+    return None
 
 
 def _interior_floor_geom(model, interior_body, support_geom=None):
@@ -3413,6 +3442,62 @@ def _freeze_resting_objects_in_track(raw_track, resting_objects):
         "physics_substeps": 0,
         "physics_object_count": len(resting_objects),
         "physics_objects": list(resting_objects),
+    })
+    return augmented, final_poses
+
+
+def _rigid_follow_resting_objects(
+        rig, q, raw_track, resting_objects, interior_body):
+    """Carry scene-authored thin contents rigidly with their container box."""
+    m, d = rig.model, rig.data
+    support_id = mujoco.mj_name2id(
+        m, mujoco.mjtObj.mjOBJ_BODY, interior_body)
+    if support_id < 0:
+        raise ValueError(f"container interior body not found: {interior_body!r}")
+
+    d.qpos[:] = q
+    mujoco.mj_forward(m, d)
+    support_pos0 = d.xpos[support_id].copy()
+    support_quat0 = d.xquat[support_id].copy()
+    local_poses = {}
+    for obj_name, (pos, quat) in resting_objects.items():
+        local_poses[obj_name] = (
+            quat_rot(quat_conj(support_quat0), np.asarray(pos) - support_pos0),
+            quat_mul(quat_conj(support_quat0), np.asarray(quat)),
+        )
+
+    augmented = dict(raw_track)
+    augmented["meta"] = dict(raw_track.get("meta") or {})
+    augmented["channels"] = dict(raw_track.get("channels") or {})
+    object_channels = {obj_name: [] for obj_name in resting_objects}
+    frame_q = q.copy()
+    for frame_index in range(len(raw_track.get("time") or [])):
+        for joint_name, values in raw_track["channels"].items():
+            adr = rig.jadr(joint_name)
+            frame_q[adr:adr + len(values[frame_index])] = values[frame_index]
+        d.qpos[:] = frame_q
+        mujoco.mj_forward(m, d)
+        support_pos = d.xpos[support_id].copy()
+        support_quat = d.xquat[support_id].copy()
+        for obj_name, (local_pos, local_quat) in local_poses.items():
+            world_pos = support_pos + quat_rot(support_quat, local_pos)
+            world_quat = quat_mul(support_quat, local_quat)
+            object_channels[obj_name].append([
+                *map(float, world_pos), *map(float, world_quat)
+            ])
+
+    final_poses = {}
+    for obj_name, poses in object_channels.items():
+        augmented["channels"][_obj_joint(obj_name)] = poses
+        final = np.asarray(poses[-1], dtype=float)
+        final_poses[obj_name] = (final[:3].copy(), final[3:7].copy())
+    augmented["meta"].update({
+        "physics_replay_skipped": True,
+        "physics_replay_skip_reason": "scene_authored_rigid_container_contents",
+        "physics_substeps": 0,
+        "physics_object_count": len(resting_objects),
+        "physics_objects": list(resting_objects),
+        "rigid_follow_body": interior_body,
     })
     return augmented, final_poses
 
@@ -4377,7 +4462,8 @@ def compile_robot(rig, robot_name, steps, standoffs, tracks_dir, facilities,
                     rig, q, obj, grasp_mode=pick_grasp_mode,
                     return_to_ready=return_to_ready,
                     grasp_offset=step.get("grasp_offset"),
-                    post_grasp_lift=step.get("post_grasp_lift", 0.0))
+                    post_grasp_lift=step.get("post_grasp_lift", 0.0),
+                    ready_torso=step.get("ready_torso"))
             # Once a horizontal pick has returned to the canonical ready arm,
             # its actual carry frame is no longer the side-grasp orientation.
             # Let reach-in placement solve position-first from that real ready
@@ -4580,9 +4666,16 @@ def compile_robot(rig, robot_name, steps, standoffs, tracks_dir, facilities,
                 # with the container. If only a sibling door moves (a fridge
                 # or cabinet), keep the already-settled world pose constant.
                 facility_objects = resting[facility]
-                tr, settled_objects = _replay_or_freeze_resting_objects(
-                    rig, q, tr, facility_objects,
-                    placement_regions.get(facility, {}))
+                placement_region = placement_regions.get(facility, {})
+                if (facility in shared_world.get(
+                        "initial_resting_facilities", set())
+                        and placement_region.get("interior_body")):
+                    tr, settled_objects = _rigid_follow_resting_objects(
+                        rig, q, tr, facility_objects,
+                        placement_region["interior_body"])
+                else:
+                    tr, settled_objects = _replay_or_freeze_resting_objects(
+                        rig, q, tr, facility_objects, placement_region)
                 resting[facility] = settled_objects
                 # Give this augmented replay its OWN label/track file — NOT
                 # the canonical skill name. `name`.track.json on disk is the
@@ -5456,15 +5549,39 @@ def _make_shared_world(rig, manifest, initial_q=None):
         obj: _joint_qpos_span(rig.model, _obj_joint(obj))
         for obj in manifest["objects"]
     }
+    world_q = (rig.model.qpos0 if initial_q is None else initial_q).copy()
+    # Objects that begin inside a declared container already rest on that
+    # fixture before the first authored step. Register them exactly like
+    # objects released by a runtime place; otherwise an initial CloseDrawer
+    # moves only the slide joint and leaves its contents floating in world
+    # coordinates. Picking one later removes it from this table in
+    # compile_robot, while the remaining contents continue to follow.
+    resting = {}
+    for obj, obj_spec in manifest["objects"].items():
+        facility = obj_spec.get("home_facility")
+        facility_spec = manifest["facilities"].get(facility) or {}
+        place = facility_spec.get("place") or {}
+        articulation = facility_spec.get("articulation") or {}
+        if (place.get("kind") != "container"
+                or articulation.get("initial_state") != "open"):
+            continue
+        adr, width = object_spans[obj]
+        if width != 7:
+            continue
+        resting.setdefault(facility, {})[obj] = (
+            world_q[adr:adr + 3].copy(),
+            world_q[adr + 3:adr + 7].copy(),
+        )
     return {
-        "q": (rig.model.qpos0 if initial_q is None else initial_q).copy(),
+        "q": world_q,
         "fixture_spans": fixture_spans,
         "object_spans": object_spans,
         "facility_state": facility_state,
         "held_by": {},
         # facility -> {object: (position, quaternion)}. All objects in one
         # facility are settled/replayed in a single MuJoCo rollout.
-        "resting": {},
+        "resting": resting,
+        "initial_resting_facilities": set(resting),
     }
 
 
@@ -6527,6 +6644,11 @@ def compile_plan_v2(
     # its robot cursors choose the chronological order below.
     _container_dependency_order(plans, manifest)
 
+    # Facility activity completions drive automatic close ownership. Include
+    # both destination placements and source transfers: a cabinet emptied onto
+    # an island must stay open until every cabinet object's entire move group
+    # has completed, then close on the actual latest eligible robot just like a
+    # fridge receiving objects.
     placement_completions = {}
     for placement_robot, robot_steps in plans.items():
         for placement_index, placement in enumerate(robot_steps):
@@ -6536,11 +6658,31 @@ def compile_plan_v2(
             if (placement_index + 1 < len(robot_steps)
                     and robot_steps[placement_index + 1].get("op") == "reset"):
                 completion = robot_steps[placement_index + 1]
-            placement_completions.setdefault(placement["dest"], []).append({
+            completion_entry = {
                 "step": completion["id"],
                 "place_step": placement["id"],
                 "robot": placement_robot,
-            })
+            }
+            destination = placement["dest"]
+            placement_completions.setdefault(destination, []).append(
+                completion_entry)
+
+            group = placement.get("group")
+            source_object = next((
+                candidate.get("object")
+                for candidate in reversed(robot_steps[:placement_index])
+                if candidate.get("group") == group
+                and candidate.get("op") == "pick"
+                and candidate.get("object")
+            ), None)
+            source = (
+                (manifest["objects"].get(source_object) or {}).get(
+                    "home_facility")
+                if source_object is not None else None
+            )
+            if source and source != destination:
+                placement_completions.setdefault(source, []).append(
+                    {**completion_entry, "source_object": source_object})
 
     # Unlocked close groups are deliberately removed from their provisional
     # robot programs. They are inserted at the winning robot's live cursor only

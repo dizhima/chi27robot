@@ -461,6 +461,8 @@ def _steps(
                 pick["post_grasp_lift"] = pick_cfg.get("post_grasp_lift", 0.0)
         if "grasp_offset" in pick_cfg:
             pick["grasp_offset"] = list(pick_cfg["grasp_offset"])
+        if "ready_torso" in pick_cfg:
+            pick["ready_torso"] = float(pick_cfg["ready_torso"])
         label = str(object_spec.get("label", ""))
         grasp_name = f"{action.object} {label}".lower().replace("_", " ")
         if (configured_grasp is None

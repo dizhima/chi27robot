@@ -109,6 +109,11 @@ def main():
     parser.add_argument("--out-png", type=Path, default=None,
                         help="default: docs/standoffs_topdown_<scene-stem>.png")
     parser.add_argument("--island-prefix", default=None)
+    parser.add_argument(
+        "--render-from-json",
+        action="store_true",
+        help="render the existing --out-json cache without recalibrating or overwriting it",
+    )
     args = parser.parse_args()
 
     scene = args.scene
@@ -125,29 +130,41 @@ def main():
     bbox = island_bbox(model, data, island_prefix)
     print("island bbox x[%.3f,%.3f] y[%.3f,%.3f]" % bbox)
 
-    # standoffs are just cached defaults for named targets; the same
-    # standoff_for_point() serves arbitrary user/LLM-proposed points at runtime.
-    out = {"island_bbox": [round(v, 4) for v in bbox], "targets": {}}
     rows = []
-    for name, body in targets.items():
-        bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body)
-        txy = data.xpos[bid][:2].copy()
-        res = standoff_for_point(rig, txy, exclude_bodies={body})
-        if not res["feasible"]:
-            print(f"  {name:20s} INFEASIBLE: {res['reason']}")
-            continue
-        so = np.array(res["standoff_xy"])
-        reach = float(np.linalg.norm(so - txy))
-        out["targets"][name] = {
-            "standoff_xy": res["standoff_xy"], "face_xy": res["face_xy"],
-            "reach": round(reach, 3), "clearance": res["clearance"],
-        }
-        print(f"  {name:20s} standoff={np.round(so,3)} reach={reach:.2f} clear={res['clearance']:.2f}")
-        rows.append((name, txy, so))
+    if args.render_from_json:
+        out = json.loads(out_json.read_text(encoding="utf-8"))
+        for name, spec in out.get("targets", {}).items():
+            body = targets.get(name)
+            if body is None and name == "island":
+                body = f"{island_prefix}_main"
+            if body is None:
+                continue
+            bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body)
+            rows.append((name, data.xpos[bid][:2].copy(), np.array(spec["standoff_xy"])))
+        print("rendering existing", out_json)
+    else:
+        # Standoffs are cached defaults for named targets; the same
+        # standoff_for_point() serves arbitrary user/LLM-proposed points.
+        out = {"island_bbox": [round(v, 4) for v in bbox], "targets": {}}
+        for name, body in targets.items():
+            bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body)
+            txy = data.xpos[bid][:2].copy()
+            res = standoff_for_point(rig, txy, exclude_bodies={body})
+            if not res["feasible"]:
+                print(f"  {name:20s} INFEASIBLE: {res['reason']}")
+                continue
+            so = np.array(res["standoff_xy"])
+            reach = float(np.linalg.norm(so - txy))
+            out["targets"][name] = {
+                "standoff_xy": res["standoff_xy"], "face_xy": res["face_xy"],
+                "reach": round(reach, 3), "clearance": res["clearance"],
+            }
+            print(f"  {name:20s} standoff={np.round(so,3)} reach={reach:.2f} clear={res['clearance']:.2f}")
+            rows.append((name, txy, so))
 
-    out_json.parent.mkdir(parents=True, exist_ok=True)
-    out_json.write_text(json.dumps(out, indent=2), encoding="utf-8")
-    print("wrote", out_json)
+        out_json.parent.mkdir(parents=True, exist_ok=True)
+        out_json.write_text(json.dumps(out, indent=2), encoding="utf-8")
+        print("wrote", out_json)
 
     # --- 2D top-down floor plan -----------------------------------------
     import matplotlib

@@ -1,10 +1,11 @@
 \section{\oursystem{} System}
 \label{sec:system}
 
-\oursystem{} is a browser-based workspace in which a user and an LLM-based author progressively construct and refine a task plan for two mobile manipulators operating in a shared kitchen.
+\oursystem{} is a browser-based workspace for progressively authoring and refining plans for multiple mobile manipulators in shared environments.
+We instantiate the system in customized RoboCasa~\cite{nasiriany2024robocasa, nasiriany2026robocasa365}-based kitchen scenes that provide structured objects, openable containers, and placeable regions.
 As illustrated in \autoref{fig:system-overview}, the system organizes this process around one persistent plan rather than treating each user instruction as an independent planning request.
 A user can begin with partial natural-language intent, which the system grounds and completes into a valid team plan (DG1).
-The resulting plan is externalized through a per-robot timeline and a linked scene view, allowing the user to inspect and revise individual planning decisions (DG2).
+The resulting plan is externalized through a per-robot timeline and a scene view, allowing the user to inspect and revise individual planning decisions (DG2).
 After each revision, the system preserves unaffected user intent and re-coordinates the team-wide execution (DG3).
 
 This workflow separates two planning responsibilities.
@@ -20,8 +21,8 @@ We introduce the interface through a short plan-authoring scenario.
 Suppose a user wants two robots to organize objects in a kitchen.
 The user begins by typing, ``Let robot 0 move the apples to the fridge, and let robot 1 move the mugs to the sink.''
 The system grounds the mentioned objects and destinations in the current scene and constructs a plan containing one semantic move task for each object.
-It also completes implicit requirements, such as opening and closing the refrigerator around the relevant placements.
-Once the plan has been compiled, the interface presents a textual summary in the conversation, one task lane for each robot in the Gantt timeline, and the corresponding routes and placement targets in the scene.
+It also completes implicit interdependency requirements, such as opening and closing the refrigerator around the relevant placements.
+Once the plan has been compiled, the interface presents a textual update summary in the conversation, one task lane for each robot in the Gantt timeline, and the corresponding routes and placement targets in the scene.
 The user can play the compiled execution to inspect how the plan is realized.
 
 The user then extends the existing plan rather than starting over.
@@ -59,7 +60,7 @@ The message carries symbolic object and pin references; their scene identities a
 In the plan view, a ``+'' button inserts a task reference into the message composer.
 This supports plan-relative requests such as ``Move the lemons to the fridge before [referenced task]'' without requiring the user to reproduce or disambiguate the task's label.
 
-\subsubsection{Direct Manipulation of the Timeline}
+\subsubsection{Manipulation of the Timeline}
 
 The Gantt view externalizes task allocation, relative order, and the temporal consequences of coordination.
 Users can drag a task bar to another position in the timeline.
@@ -71,7 +72,7 @@ The timeline also supports precedence between tasks on different robots.
 A user can make one task wait for a task on the other lane, adding an explicit cross-robot dependency without changing either task's semantic goal.
 The timeline displays the newly constrained schedule after compilation, making the team-wide timing consequence of the local edit inspectable.
 
-\subsubsection{Direct Manipulation in the Scene}
+\subsubsection{Tuning in the Scene}
 
 The scene view exposes spatial execution details that are cumbersome to describe precisely in language.
 Selecting a task or step in the timeline highlights its corresponding route and spatial markers.
@@ -85,62 +86,61 @@ Consequently, the user can locally adjust a route or placement without taking re
 \subsection{Backend Planning Pipeline}
 \label{sec:backend-pipeline}
 
-Language, timeline, and scene interactions modify different fields of the same persistent plan.
-Language primarily changes semantic tasks; the Gantt timeline changes allocation, order, and cross-robot precedence; and the scene changes spatial constraints.
-Regardless of where a revision originates, the backend converts it into a structured update to the current plan and sends the result through the same compilation and commit path.
-Language revisions first pass through the LLM-based Author, whereas timeline and scene revisions directly update their corresponding structured plan fields without language interpretation.
-The frontend adopts the returned plan and execution artifact atomically, ensuring that the task plan, timeline, spatial overlays, and playback describe the same committed execution.
+\begin{figure*}[h!]
+  \centering
+  \includegraphics[width=\linewidth]{figures/backend.pdf}
+  \caption{\oursystem{} planning pipeline.}
+  \Description{
+  }
+  \label{fig:backend}
+\end{figure*}
+
+Language, timeline, and scene interactions contribute complementary revisions to the same persistent plan.
+Language expresses changes to semantic task intent; timeline edits revise robot allocation, task order, and cross-robot precedence; and scene modifications pin step-level spatial constraints, such as placement targets and navigation waypoints.
+As shown in \autoref{fig:backend}(a), a turn combines the user's instruction and references with the current plan and a compact scene manifest.
+The LLM-based Author interprets the language request in the context of the current plan as updated by any timeline and scene edits, while using validated tools to mutate only its semantic actions.
+After the Author commits, a deterministic decomposer expands the semantic actions into ordered per-robot skill-step programs, yielding the authored plan in \autoref{fig:backend}(b).
+The MuJoCo-backed compiler then incrementally compiles ready steps, checks their spatiotemporal occupancy, and applies bounded repairs when necessary (\autoref{fig:backend}(c)).
+The frontend atomically adopts the resulting plan and execution artifact so that the task plan, timeline, spatial overlays, and playback remain synchronized.
 
 \subsubsection{LLM-Based Plan Authoring}
 
-The Author translates a user turn into a mutation of the current semantic plan.
-Its context contains the user's instruction, a compact manifest of objects and placeable facilities in the scene, the current plan, and any scene or plan references selected in the interface.
-Scene references allow a user to point to an object or location without reproducing its system name or coordinates.
-Plan references are resolved against stable semantic task identifiers, rather than inferred from a task's displayed label or current position on the timeline.
+The LLM Author translates a user turn into a mutation of the current semantic plan.
+The Author's context consists of four components: the user's natural-language instruction, including any embedded scene or plan references; a compact manifest of objects and facilities in the scene; the current plan; and a system prompt.
 
-The Author operates through a constrained set of server-side tools.
-These tools add or remove tasks (\texttt{augment} and \texttt{remove\_task}), update an existing move while retaining its identity (\texttt{update\_move}), change robot allocation (\texttt{reassign}), revise task order (\texttt{revise\_order}), bind a selected placement location (\texttt{set\_place\_pin}), and commit the resulting plan (\texttt{propose\_plan}).
-The tools ground requested objects and destinations, validate their arguments, and reject structurally invalid changes.
-They also complete task-level requirements that the user need not enumerate, including default robot allocation and shared open--close operations for containers.
-Because each tool modifies the authoritative working plan, an unmentioned task retains its identifier, allocation, destination, ordering, and prior user edits across turns.
+The Author operates through a constrained set of plan authoring tools.
+These tools add or remove tasks, update an existing move's target object or destination, change robot allocation, revise task order, and finally commit the resulting plan.
+The tools ground requested objects and destinations, validate their arguments, and reject invalid or ungrounded changes, such as references to objects absent from the scene.
+They also complete task-level requirements that the user need not enumerate, including workload-balanced default robot allocation and shared open--close operations for refrigerators, cabinets, and drawers.
+The Author iteratively invokes these tools against a server-side working plan, using each tool result to select the next operation until it commits the plan.
 
 The Author's output is therefore not a trajectory or a sequence of low-level robot commands.
 It is an ordered set of grounded semantic actions with stable identifiers, robot assignments, objects, destinations, ordering constraints, and optional spatial pins.
 This boundary limits the LLM to interpreting and editing task intent; geometry, timing, and inter-robot motion coordination are handled by deterministic downstream components.
 
 Once the Author commits its semantic actions, a deterministic decomposer expands each action into an authored task containing executable skill steps.
-For example, moving an object expands into navigation to the object, picking it, navigation to the destination, placing it, and resetting the manipulator.
-Opening and closing a fixture similarly expand into navigation, manipulation, and reset steps.
+For example, ``lemon → fridge'' expands into navigation to the lemon, picking it, navigation to the fridge, and placing it.
+Opening and closing a fixture similarly expand into navigation and manipulation.
 Each step retains the stable identifier of its parent semantic task, allowing the conversation, task timeline, step timeline, scene overlays, and compiled execution to remain linked.
-The decomposed plan is canonicalized into one ordered step program per robot, with explicit constraints for precedence that crosses robot lanes.
+The decomposed plan is canonicalized into one ordered step program per robot, with explicit precedence constraints that cross robot lanes—for example, requiring robot 1's mug task to begin only after robot 0's bowl task completes.
 
 \subsubsection{Incremental Joint Compilation}
 
-The compiler consumes the decomposed per-robot programs and incrementally constructs a joint execution.
-It maintains a cursor and execution context for each robot.
-A step becomes ready after both the preceding step on the same robot and any explicit cross-robot predecessors have completed.
-Among the ready steps, the compiler commits the one with the earliest feasible start time and uses a deterministic tie break.
-The operation compiler produces the step's duration, motion track, final robot pose, and resulting object or facility state.
-Once committed, this result becomes part of an immutable prefix against which later steps are compiled.
+The compiler incrementally constructs a joint execution from the decomposed per-robot programs, using the MuJoCo scene model for motion generation, collision checking, and state propagation.
+A step becomes ready once its preceding step on the same robot and any cross-robot predecessors have completed.
+The compiler selects the ready step with the earliest feasible start time, compiles its motion and resulting state, and commits it to an immutable execution prefix.
 
-To coordinate the robots, the compiler represents each committed step as a spatiotemporal reservation.
-Navigation steps reserve the robot's swept occupancy, while manipulation, reset, and waiting steps reserve the robot's stationary occupancy over their execution intervals.
-A newly compiled navigation route is checked against both the static scene and the reservations created by previously committed steps.
-Thus, a robot cannot be routed through another robot merely because the latter is stationary while manipulating an object.
-
-When a navigation conflict is detected, the compiler generates a bounded set of deterministic repair candidates.
-Depending on the conflict topology, it may reroute the current navigation, insert a detour that temporarily moves a blocking robot to free space, or serialize the relevant actions by introducing a wait or precedence constraint.
-Each candidate is applied to a copy of the current program and verified against geometry, reservations, and dependency cycles.
-The first valid candidate is committed; if no supported repair is valid, the compiler reports a structured failure rather than silently changing the task's object, destination, or protected robot assignment.
-
-The completed artifact contains the final per-robot step programs, an absolute schedule, motion tracks for playback, routes and spatial targets for scene overlays, and provenance for compiler-generated repairs.
-The compiler may alter execution geometry and timing to restore coordination, but it preserves the semantic intent and user-authored spatial constraints supplied at its input.
+Each new motion is checked against the static scene and the spatiotemporal occupancy of previously committed steps.
+When a conflict is detected, the compiler evaluates a bounded set of deterministic repairs: rerouting a navigation step, detouring a blocking robot, or serializing actions through a wait or precedence constraint.
+Candidates are verified for geometry, occupancy, and dependency cycles, and the first valid candidate is committed.
+The resulting artifact contains the coordinated schedule and motion tracks while preserving semantic task intent and user-authored spatial constraints.
+If no repair succeeds, the compiler returns a structured failure.
 
 \subsection{Implementation Details}
 \label{sec:implementation-details}
 
 The frontend is implemented in React and TypeScript and builds on an extended version of \texttt{mujoco-react}\footnote{\url{https://github.com/noah-wardlow/mujoco-react}}, a React Three Fiber interface to the official MuJoCo WebAssembly bindings.
-We extended the library to load precompiled MuJoCo binary models (\texttt{.mjb}) and to correctly render the per-corner texture coordinates, sRGB colors, texture orientation, and large meshes used by RoboCasa scenes.
+We extended the library to load precompiled MuJoCo binary models (\texttt{.mjb}) and to correctly render the per-corner texture coordinates, sRGB colors, texture orientation, and large meshes used by RoboCasa~\cite{nasiriany2024robocasa,nasiriany2026robocasa365} scenes.
 % We instantiate the system in customized RoboCasa-based kitchens, compiling each scene from its XML description into an \texttt{.mjb} model with the same MuJoCo version used by the browser runtime.
 % Before binary compilation, we downsample the scene's web textures to at most 512 pixels per dimension, reducing their embedded texture memory by approximately fourfold and allowing full kitchen scenes to load within browser WebAssembly memory limits.
 The backend is implemented in Python.

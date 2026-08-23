@@ -700,6 +700,23 @@ def build_manifest(scene_xml: Path, tracks_dir: Path, scene_table_path: Path,
                 if not isinstance(return_to_ready, bool):
                     validation_errors.append(
                         f"objects.{name}.pick.return_to_ready: expected boolean")
+                ready_torso = pick_cfg.get("ready_torso")
+                normalized_ready_torso = None
+                if ready_torso is not None:
+                    try:
+                        normalized_ready_torso = float(ready_torso)
+                    except (TypeError, ValueError):
+                        normalized_ready_torso = float("nan")
+                    torso_joint = mujoco.mj_name2id(
+                        model, mujoco.mjtObj.mjOBJ_JOINT,
+                        "mobilebase0_joint_torso_height")
+                    torso_range = model.jnt_range[torso_joint]
+                    if (not np.isfinite(normalized_ready_torso)
+                            or normalized_ready_torso < torso_range[0]
+                            or normalized_ready_torso > torso_range[1]):
+                        validation_errors.append(
+                            f"objects.{name}.pick.ready_torso: expected a finite "
+                            f"value in [{torso_range[0]}, {torso_range[1]}]")
                 has_post_grasp_lift = "post_grasp_lift" in pick_cfg
                 post_grasp_lift = pick_cfg.get("post_grasp_lift", 0.0)
                 try:
@@ -739,6 +756,8 @@ def build_manifest(scene_xml: Path, tracks_dir: Path, scene_table_path: Path,
                             normalized_pick["post_grasp_lift"] = post_grasp_lift
                     if normalized_grasp_offset is not None:
                         normalized_pick["grasp_offset"] = normalized_grasp_offset
+                    if normalized_ready_torso is not None:
+                        normalized_pick["ready_torso"] = normalized_ready_torso
         objects_out[name] = {
             "label": spec.get("label", name),
             "body": spec["body"],

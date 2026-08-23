@@ -304,8 +304,11 @@ def mark_automatic_close_owners_deferred(
 
     The semantic/frontend contract still carries a provisional ``robot``.
     Compiler V2 ignores that value for an unlocked close and binds the group
-    only after every placement completion has an actual scheduled end time.
-    User-assigned (``robot_locked``) closes remain untouched.
+    only after every related transfer has an actual scheduled end time. A
+    transfer is related when it places into the facility *or* picks an object
+    whose home is that facility and moves it elsewhere. The latter is the
+    source-close case (for example, emptying an initially-open cabinet onto an
+    island). User-assigned (``robot_locked``) closes remain untouched.
     """
     result = copy.deepcopy(plan)
     tasks = result.get("tasks")
@@ -326,6 +329,23 @@ def mark_automatic_close_owners_deferred(
         for step in (task.get("steps") or [])
         if step.get("op") == "place" and step.get("dest")
     }
+    source_facilities = set()
+    objects = manifest.get("objects") or {}
+    for task in tasks:
+        steps = task.get("steps") or []
+        picked_objects = [
+            step.get("object") for step in steps
+            if step.get("op") == "pick" and step.get("object")
+        ]
+        destinations = [
+            step.get("dest") for step in steps
+            if step.get("op") == "place" and step.get("dest")
+        ]
+        for object_name in picked_objects:
+            source = (objects.get(object_name) or {}).get("home_facility")
+            if source and any(destination != source for destination in destinations):
+                source_facilities.add(source)
+    active_facilities = placement_facilities | source_facilities
 
     deferred = []
     for task in tasks:
@@ -337,8 +357,7 @@ def mark_automatic_close_owners_deferred(
                 step.get("name", step.get("op")))
             if close_facility is not None:
                 break
-        if (close_facility is None
-                or close_facility not in placement_facilities):
+        if close_facility is None or close_facility not in active_facilities:
             continue
         task[DEFERRED_CLOSE_FACILITY_FIELD] = close_facility
         deferred.append({
