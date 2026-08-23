@@ -7,6 +7,7 @@ import {
   backendUrl,
   defaultSceneConfig,
   defaultScenePath,
+  suggestedScenePaths,
   initialStateKeyframe,
   mtMujocoWasmUrl,
   threadedMujocoLoader,
@@ -100,12 +101,14 @@ import {
 } from "./conversation/planContext";
 import { RefComposer, type ComposerHandle, type ComposerPart } from "./conversation/RefComposer";
 import { ScenePickController, type ScenePick } from "./ScenePickController";
+import { ScenePathPicker } from "./ScenePathPicker";
 import { loadSceneManifest } from "./authoring/grounding";
 import type { SceneManifest } from "./authoring/types";
 import { resetCameraToScenePresentation, scenePresentationFor } from "./scenePresentation";
 
 const PLAN_SUBTITLES_STORAGE_KEY = "mujoco-plan-task-subtitles";
 const SHOW_SCENE_OBJECT_LABELS = import.meta.env.VITE_SHOW_SCENE_OBJECT_LABELS !== "false";
+const EXPLORE_ENABLED = import.meta.env.VITE_ENABLE_EXPLORE !== "false";
 const CHECKPOINT_SAVE_ENABLED = import.meta.env.VITE_ENABLE_CHECKPOINT_SAVE === "true";
 const CHECKPOINT_LOAD_ENABLED = import.meta.env.VITE_ENABLE_CHECKPOINT_LOAD === "true";
 const STUDY_TARGET_LOAD_ENABLED = import.meta.env.VITE_ENABLE_STUDY_TARGET_LOAD === "true";
@@ -193,6 +196,7 @@ function studyTurnResultContent(
 export default function ScenePage() {
   const [sceneConfig, setSceneConfig] = useState<SceneConfig>(defaultSceneConfig);
   const [sceneInput, setSceneInput] = useState(defaultScenePath);
+  const [sceneStatus, setSceneStatus] = useState("Select or type a scene");
   const [sceneConfirmed, setSceneConfirmed] = useState(false);
   const [selectedBodyId, setSelectedBodyId] = useState<number | null>(null);
   const [simReady, setSimReady] = useState(false);
@@ -219,12 +223,14 @@ export default function ScenePage() {
         if (cancelled || !session.ok) return;
         setSceneInput(session.sceneFile);
         setSceneConfig({ src: session.src, sceneFile: session.sceneFile });
+        setSceneStatus("Select or type a scene");
       })
       .catch((error) => {
         if (!cancelled) {
-          console.warn(
-            "using fallback scene; current-scene lookup failed:",
-            error instanceof Error ? error.message : String(error),
+          setSceneStatus(
+            `using fallback scene; current-scene lookup failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
           );
         }
       });
@@ -1778,6 +1784,7 @@ export default function ScenePage() {
   };
 
   const confirmScene = () => {
+    setSceneStatus("opening scene");
     setSchedulePlaying(false);
     setExploreMode(false);
     fetch(`${backendUrl}/api/scene/open`, {
@@ -1798,7 +1805,7 @@ export default function ScenePage() {
         setSceneConfirmed(true);
       })
       .catch((err) => {
-        console.error(err instanceof Error ? err.message : String(err));
+        setSceneStatus(err instanceof Error ? err.message : String(err));
       });
   };
 
@@ -1861,21 +1868,19 @@ export default function ScenePage() {
         <section className="scene-launcher-panel">
           <h1>Open Scene</h1>
           <div className="scene-launcher-row">
-            <input
+            <ScenePathPicker
               id="scene-path"
-              aria-label="Scene path"
+              ariaLabel="Scene path"
               value={sceneInput}
-              onChange={(event) => setSceneInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  confirmScene();
-                }
-              }}
+              paths={suggestedScenePaths}
+              onChange={setSceneInput}
+              onConfirm={confirmScene}
             />
             <button type="button" onClick={confirmScene}>
               Confirm Scene
             </button>
           </div>
+          <div className="scene-launcher-status">{sceneStatus}</div>
         </section>
       </div>
     );
@@ -1993,23 +1998,25 @@ export default function ScenePage() {
             >
               Reset
             </button>
-            <button
-              type="button"
-              className={`scene-explore-button${exploreMode ? " is-active" : ""}`}
-              onClick={exploreMode ? returnToPlan : enterExplore}
-              disabled={!exploreMode && !exploreAvailable}
-              title={
-                exploreMode
-                  ? playbackAvailable
-                    ? "Restore the compiled plan at the current timeline time"
-                    : "Return to the draft plan and pause live physics"
-                  : !draftPlan
-                    ? "The scene is already directly interactive until a plan is generated"
-                    : "Explore the scene with live physics and dragging"
-              }
-            >
-              {exploreMode ? "Return to plan" : "Explore"}
-            </button>
+            {EXPLORE_ENABLED ? (
+              <button
+                type="button"
+                className={`scene-explore-button${exploreMode ? " is-active" : ""}`}
+                onClick={exploreMode ? returnToPlan : enterExplore}
+                disabled={!exploreMode && !exploreAvailable}
+                title={
+                  exploreMode
+                    ? playbackAvailable
+                      ? "Restore the compiled plan at the current timeline time"
+                      : "Return to the draft plan and pause live physics"
+                    : !draftPlan
+                      ? "The scene is already directly interactive until a plan is generated"
+                      : "Explore the scene with live physics and dragging"
+                }
+              >
+                {exploreMode ? "Return to plan" : "Explore"}
+              </button>
+            ) : null}
           </main>
 
           <aside className="chat-rail" aria-label="Assistant">

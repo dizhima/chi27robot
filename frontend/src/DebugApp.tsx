@@ -31,6 +31,7 @@ import { RightWorkspace } from "./authoring/RightWorkspace";
 import { loadSceneManifest } from "./authoring/grounding";
 import type { SceneManifest } from "./authoring/types";
 import { ScenePickController, type ScenePick } from "./ScenePickController";
+import { ScenePathPicker } from "./ScenePathPicker";
 import { PlanOverlay } from "./plan/PlanOverlay";
 import { buildBodyIndex } from "./conversation/sceneContext";
 import {
@@ -44,6 +45,7 @@ import {
   backendUrl,
   defaultSceneConfig,
   defaultScenePath,
+  suggestedScenePaths,
   initialStateKeyframe,
   mtMujocoWasmUrl,
   threadedMujocoLoader,
@@ -121,7 +123,7 @@ export default function DebugApp() {
   const [sceneConfig, setSceneConfig] = useState<SceneConfig>(defaultSceneConfig);
   const [sceneSession, setSceneSession] = useState<SceneSession | null>(null);
   const [sceneInput, setSceneInput] = useState(defaultScenePath);
-  const [sceneStatus, setSceneStatus] = useState("default scene ready");
+  const [sceneStatus, setSceneStatus] = useState("Select or type a scene");
   const [sceneConfirmed, setSceneConfirmed] = useState(false);
   const [selectedBodyId, setSelectedBodyId] = useState<number | null>(null);
   const [selectedBodyName, setSelectedBodyName] = useState<string | null>(null);
@@ -590,7 +592,7 @@ export default function DebugApp() {
         setSceneSession(session);
         setSceneInput(session.sceneFile);
         setSceneConfig({ src: session.src, sceneFile: session.sceneFile });
-        setSceneStatus(`current scene: ${session.sceneFile}`);
+        setSceneStatus("Select or type a scene");
       })
       .catch((err) => {
         setSceneStatus(
@@ -663,15 +665,13 @@ export default function DebugApp() {
           </div>
           <label htmlFor="initial-scene-path">Scene path (relative to public/)</label>
           <div className="scene-launcher-row">
-            <input
+            <ScenePathPicker
               id="initial-scene-path"
+              ariaLabel="Scene path (relative to public/)"
               value={sceneInput}
-              onChange={(event) => setSceneInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  confirmScene();
-                }
-              }}
+              paths={suggestedScenePaths}
+              onChange={setSceneInput}
+              onConfirm={confirmScene}
             />
             <button type="button" onClick={confirmScene}>
               Confirm Scene

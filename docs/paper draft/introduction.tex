@@ -14,7 +14,8 @@ These systems demonstrate that natural language can serve as a viable entry poin
 Underlying these systems, however, is a shared interaction paradigm that we characterize as \emph{task-centric autonomous planning}.
 The user's instruction is treated as an upfront task specification; the system then internally performs decomposition, allocation, and returns an executable result.
 Although some pipelines iterate internally---for example, through simulation feedback~\cite{COHERENT} or inter-agent negotiation~\cite{mandi2024roco}---the resulting team plan remains an internal product of the planner.
-What the user receives is the execution outcome, not the plan itself: which robot was assigned which task, in what order, and under which cross-robot dependencies is rarely exposed as a structured, human-facing artifact that the user can act upon~\cite{}.
+What the user receives is the execution outcome, not the plan itself: which robot was assigned which task, in what order, and under which cross-robot dependencies remains internal to the planner.
+Even when such systems surface these decisions---as inter-agent dialogue~\cite{chen2024scalable} or dependency-annotated task decompositions~\cite{wang2024dartllm}---the plan is presented as output to be accepted or regenerated, not as a persistent artifact the user can directly act upon.
 
 % ---------------------------------------------------------------
 % P3: The HCI gap (analytical argument + adjacent literature)

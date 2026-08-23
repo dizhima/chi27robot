@@ -2842,6 +2842,29 @@ def _clearance(p, rects):
     return best
 
 
+def _floor_xy_bounds(rig):
+    """Largest finite floor footprint, used as the actual room boundary.
+
+    Open study scenes deliberately remove one or more wall bodies.  Inferring
+    room bounds from the remaining furniture then clips valid standoffs on the
+    open side of an island (layout034's plate_2 side is one such case).  The
+    exported finite floor slab still describes the navigable room exactly.
+    """
+    m, d = rig.model, rig.data
+    candidates = []
+    for g in range(m.ngeom):
+        name = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g) or ""
+        if "floor" not in name.lower():
+            continue
+        bounds = _geom_xy_aabb(m, d, g)
+        if bounds is None:
+            continue
+        area = (bounds[1] - bounds[0]) * (bounds[3] - bounds[2])
+        if area > FLOOR_AREA:
+            candidates.append((area, bounds))
+    return max(candidates, default=(None, None), key=lambda item: item[0])[1]
+
+
 def standoff_for_point(rig, target_xy, working_q=None, exclude_bodies=(),
                        reach=REACH_BAND, base_clear=BASE_CLEAR):
     """Find a floor base position facing `target_xy`, clear of furniture, within
@@ -2852,12 +2875,19 @@ def standoff_for_point(rig, target_xy, working_q=None, exclude_bodies=(),
     user-given region) and calls this to check/realize a base pose."""
     target_xy = np.asarray(target_xy, dtype=float)[:2]
     rects = furniture_footprints(rig, working_q, exclude_bodies)
-    # room bounds = extent of all furniture/walls, inset a little (rejects
-    # candidates that escaped outside the building)
-    rminx = min(r[0] for r in rects) + ROOM_INSET
-    rmaxx = max(r[1] for r in rects) - ROOM_INSET
-    rminy = min(r[2] for r in rects) + ROOM_INSET
-    rmaxy = max(r[3] for r in rects) - ROOM_INSET
+    # Prefer the finite floor slab over furniture/walls.  Study exports can
+    # intentionally remove enclosing walls, while the floor remains the stable
+    # source of truth for valid room extents.
+    floor_bounds = _floor_xy_bounds(rig)
+    if floor_bounds is None:
+        floor_bounds = (
+            min(r[0] for r in rects), max(r[1] for r in rects),
+            min(r[2] for r in rects), max(r[3] for r in rects),
+        )
+    rminx = floor_bounds[0] + ROOM_INSET
+    rmaxx = floor_bounds[1] - ROOM_INSET
+    rminy = floor_bounds[2] + ROOM_INSET
+    rmaxy = floor_bounds[3] - ROOM_INSET
 
     # among candidates clear of furniture and in the room, prefer the shortest
     # reach distance (base tucked close to the counter, like the island GAP),
@@ -4923,13 +4953,15 @@ def _item_base_trace(item, start_xy):
     return points
 
 
-def _base_occupancy_segments(items):
+def _base_occupancy_segments(items, unfinished_robots=None):
     """Cover every robot's full ``[0, makespan]`` base occupancy.
 
-    Active items use every track keyframe. Idle gaps hold the prior endpoint,
-    including the final dwell that remains visible in playback after a robot's
-    program has ended.
+    Active items use every track keyframe. Idle gaps hold the prior endpoint.
+    A trailing gap is terminal only after that robot's whole program ends;
+    ``unfinished_robots`` marks incremental frontiers that still have future
+    steps and therefore remain ordinary inter-step dwells.
     """
+    unfinished_robots = set(unfinished_robots or ())
     makespan = max(
         (float(item["start"]) + float(item["duration"]) for item in items),
         default=0.0,
@@ -4973,21 +5005,26 @@ def _base_occupancy_segments(items):
             segments.append({
                 "t0": cursor, "t1": makespan,
                 "p0": previous_xy, "p1": previous_xy,
-                "item": previous_item, "occupancy": "final_dwell",
+                "item": previous_item,
+                "occupancy": (
+                    "inter_step_dwell"
+                    if robot in unfinished_robots else "final_dwell"
+                ),
                 "motion": "dwelling",
             })
         result[robot] = segments
     return result
 
 
-def serialize_base_occupancy_timelines(items):
+def serialize_base_occupancy_timelines(items, unfinished_robots=None):
     """JSON-safe exact base occupancy for deterministic resolver tools.
 
     This is compiler-to-resolver geometry, not part of the LLM payload.  Each
     segment covers active motion or an idle dwell in absolute schedule time.
     """
     timelines = {}
-    for robot, segments in _base_occupancy_segments(items).items():
+    for robot, segments in _base_occupancy_segments(
+            items, unfinished_robots=unfinished_robots).items():
         timelines[robot] = [
             {
                 "t0": float(segment["t0"]),
@@ -5144,9 +5181,11 @@ def _path_cluster_key(a_segment, b_segment):
     )
 
 
-def _continuous_path_conflicts(items, last_order, focus_step_id=None):
+def _continuous_path_conflicts(
+        items, last_order, focus_step_id=None, unfinished_robots=None):
     """Continuous proximity conflicts over complete robot occupancy timelines."""
-    timelines = _base_occupancy_segments(items)
+    timelines = _base_occupancy_segments(
+        items, unfinished_robots=unfinished_robots)
     robot_names = sorted(timelines)
     candidates = []
     for left_index, robot_a in enumerate(robot_names):
@@ -5259,7 +5298,7 @@ def _continuous_path_conflicts(items, last_order, focus_step_id=None):
     return conflicts
 
 
-def detect_conflicts(items, focus_step_id=None):
+def detect_conflicts(items, focus_step_id=None, unfinished_robots=None):
     """Structured conflicts (surfaced, not resolved — DG3). Each record has a
     `kind` (placement | facility | object | path), the two step ids/robots, the
     overlap `window` (None for the time-independent placement check), a `detail`
@@ -5281,7 +5320,8 @@ def detect_conflicts(items, focus_step_id=None):
     ``focus_step_id`` returns the exact projection involving one current step.
     Compiler V2 uses it after a verified prefix: historical pairs cannot become
     newly conflicting until one of their steps changes, so recomputing them on
-    every reservation check is redundant.
+    every reservation check is redundant. ``unfinished_robots`` distinguishes
+    temporary incremental-frontier occupancy from true terminal dwell.
     """
     last_order = _last_step_by_robot(items)
     # Facility sharing uses the exact same continuous base-clearance standard
@@ -5289,7 +5329,8 @@ def detect_conflicts(items, focus_step_id=None):
     # facility record only for same-facility step pairs that are physically
     # closer than STANDOFF_MIN_DIST; a shared label alone is not contention.
     path_conflicts = _continuous_path_conflicts(
-        items, last_order, focus_step_id=focus_step_id)
+        items, last_order, focus_step_id=focus_step_id,
+        unfinished_robots=unfinished_robots)
     path_proximity = {}
     for conflict in path_conflicts:
         key = frozenset(conflict["steps"])
@@ -5442,11 +5483,13 @@ def _select_incremental_ready(programs, cursors, robot_end, completed_end):
     raise ValueError(f"Compiler V2 ready frontier is blocked: {blocked}")
 
 
-def _incremental_candidate_conflicts(anchors, committed, candidates, step_id):
+def _incremental_candidate_conflicts(
+        anchors, committed, candidates, step_id, unfinished_robots=None):
     return [
         conflict
         for conflict in detect_conflicts(
-            [*anchors, *committed, *candidates], focus_step_id=step_id)
+            [*anchors, *committed, *candidates], focus_step_id=step_id,
+            unfinished_robots=unfinished_robots)
         if conflict.get("kind") in ("path", "facility")
         and step_id in conflict.get("steps", [])
     ]
@@ -5494,8 +5537,14 @@ def incremental_schedule_no_repair(items):
         op = (candidate.get("completed_step") or {}).get("op")
         if op in MOVING_OPS:
             reservation_checks += 1
+            unfinished_robots = {
+                name for name, robot_items in by_robot.items()
+                if cursors[name] + (1 if name == robot else 0)
+                < len(robot_items)
+            }
             relevant = _incremental_candidate_conflicts(
-                anchors, committed, [candidate], candidate["id"])
+                anchors, committed, [candidate], candidate["id"],
+                unfinished_robots=unfinished_robots)
             if relevant:
                 raise IncrementalCompileConflict(
                     candidate["id"], relevant,
@@ -6818,7 +6867,8 @@ def compile_plan_v2(
         dependencies.setdefault(step_id, set()).add(after_step_id)
         return _find_dependency_cycle(dependencies)
 
-    def tool_plan_and_compile_result(candidate_items):
+    def tool_plan_and_compile_result(
+            candidate_items, *, unfinished_robots=None):
         tool_plan = copy.deepcopy(plans)
         completed_by_id = {
             item["id"]: item.get("completed_step") or {}
@@ -6835,7 +6885,8 @@ def compile_plan_v2(
         probe_items = [*anchors, *items, *candidate_items]
         return tool_plan, {
             "scene_xml": str(Path(scene_xml).resolve()),
-            "base_timelines": serialize_base_occupancy_timelines(probe_items),
+            "base_timelines": serialize_base_occupancy_timelines(
+                probe_items, unfinished_robots=unfinished_robots),
             "completed": {
                 robot: [
                     copy.deepcopy(completed_by_id.get(step["id"], step))
@@ -6887,6 +6938,14 @@ def compile_plan_v2(
         # that last local step advances the frontier; waiting for the already-
         # committed dwell item does not.
         return remaining[-1]["id"] if remaining else None
+
+    def unfinished_robots_after_candidate(candidate_robot):
+        """Return robots whose trailing dwell is an incremental frontier."""
+        return {
+            name for name, robot_steps in plans.items()
+            if cursors.get(name, 0) + (1 if name == candidate_robot else 0)
+            < len(robot_steps)
+        }
 
     cursors = {robot: 0 for robot in plans}
     robot_end = {robot: 0.0 for robot in plans}
@@ -7090,7 +7149,9 @@ def compile_plan_v2(
             terminal_conflicts = [
                 conflict
                 for conflict in _incremental_candidate_conflicts(
-                    anchors, items, compiled_items, step["id"])
+                    anchors, items, compiled_items, step["id"],
+                    unfinished_robots=(
+                        unfinished_robots_after_candidate(robot)))
                 if conflict.get("requires_departure_anchor")
                 and conflict.get("class") == "one_moving"
             ]
@@ -7181,8 +7242,10 @@ def compile_plan_v2(
 
         if step["op"] in MOVING_OPS:
             reservation_checks += 1
+            unfinished_robots = unfinished_robots_after_candidate(robot)
             relevant = _incremental_candidate_conflicts(
-                anchors, items, compiled_items, step["id"])
+                anchors, items, compiled_items, step["id"],
+                unfinished_robots=unfinished_robots)
             if relevant:
                 if not repair_enabled:
                     raise IncrementalCompileConflict(
@@ -7246,7 +7309,7 @@ def compile_plan_v2(
                         continue
 
                 tool_plan, local_compile = tool_plan_and_compile_result(
-                    compiled_items)
+                    compiled_items, unfinished_robots=unfinished_robots)
 
                 # Determine the temporal candidate before choosing a repair.
                 # Resolver V2 prunes a candidate edge against the full DAG;
@@ -7497,7 +7560,8 @@ def compile_plan_v2(
                     attempted.add(reroute_key)
                     try:
                         tool_plan, local_compile = tool_plan_and_compile_result(
-                            compiled_items)
+                            compiled_items,
+                            unfinished_robots=unfinished_robots)
                         apply_replan_path(
                             tool_plan, step["id"], other_robot,
                             focus, local_compile,

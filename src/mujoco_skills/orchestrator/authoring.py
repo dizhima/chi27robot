@@ -889,6 +889,7 @@ def _merge_augmented_actions(
     result = list(existing)
     for action in additions:
         if action.op == "move" and action.dest:
+            close_indices: list[int] = []
             source = None
             if manifest is not None and action.object:
                 source = (
@@ -912,13 +913,21 @@ def _merge_augmented_actions(
                         result[source_close_index] = replace(
                             closer, after=dependencies
                         )
+                    # The existing source session is still open for this new
+                    # retrieval. Keep the move physically inside its
+                    # open..close envelope as well as adding the semantic
+                    # dependency. Appending after the close creates an
+                    # immediate same-robot ordering cycle on later turns.
+                    close_indices.append(source_close_index)
             close_index = next(
                 (index for index, item in enumerate(result)
                  if item.op == "close" and item.facility == action.dest),
                 None,
             )
             if close_index is not None:
-                result.insert(close_index, action)
+                close_indices.append(close_index)
+            if close_indices:
+                result.insert(min(close_indices), action)
                 continue
         result.append(action)
     return result

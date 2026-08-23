@@ -130,8 +130,8 @@ The compiler incrementally constructs a joint execution from the decomposed per-
 A step becomes ready once its preceding step on the same robot and any cross-robot predecessors have completed.
 The compiler selects the ready step with the earliest feasible start time, compiles its motion and resulting state, and commits it to an immutable execution prefix.
 
-Each new motion is checked against the static scene and the spatiotemporal occupancy of previously committed steps.
-When a conflict is detected, the compiler evaluates a bounded set of deterministic repairs: rerouting a navigation step, detouring a blocking robot, or serializing actions through a wait or precedence constraint.
+Each new motion is checked against the static scene and the time-indexed occupancy of previously committed steps.
+Following established spatial and temporal coordination strategies in dynamic and multi-agent path planning~\cite{phillips2011sipp,sharon2012cbs,dewilde2014pushrotate}, the compiler evaluates a bounded deterministic candidate set: rerouting the current navigation, temporarily detouring a blocking robot, or serializing conflicting actions through a wait or precedence constraint.
 Candidates are verified for geometry, occupancy, and dependency cycles, and the first valid candidate is committed.
 The resulting artifact contains the coordinated schedule and motion tracks while preserving semantic task intent and user-authored spatial constraints.
 If no repair succeeds, the compiler returns a structured failure.

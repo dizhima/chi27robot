@@ -1117,6 +1117,16 @@ canvas {
   font-size: 13px;
 }
 
+.scene-path-picker {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(20, 24, 28, 0.96);
+}
+
 .scene-launcher-row {
   display: grid;
   grid-template-columns: minmax(280px, 1fr) auto;
@@ -1136,6 +1146,53 @@ canvas {
 
 .scene-launcher-row input {
   padding: 0 10px;
+}
+
+.scene-launcher-row .scene-path-picker input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+}
+
+.scene-launcher-row .scene-path-picker-toggle {
+  width: 36px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 0 5px 5px 0;
+  background: transparent;
+  font-size: 15px;
+}
+
+.scene-path-picker-options {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 100%;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: #14181c;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+
+.scene-launcher-row .scene-path-picker-options button {
+  display: block;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: 12px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.scene-launcher-row .scene-path-picker-options button:hover,
+.scene-launcher-row .scene-path-picker-options button[aria-selected="true"] {
+  background: #26312d;
 }
 
 .scene-launcher-row button {
@@ -2281,6 +2338,8 @@ html[data-ui-theme="light"] .authoring-chat-message p {
 }
 
 html[data-ui-theme="light"] .composer-box,
+html[data-ui-theme="light"] .scene-path-picker,
+html[data-ui-theme="light"] .scene-path-picker-options,
 html[data-ui-theme="light"] .scene-launcher-row input,
 html[data-ui-theme="light"] .scene-launcher-row button,
 html[data-ui-theme="light"] .gantt-icon-btn,

@@ -10,6 +10,14 @@ export { backendUrl, skillServiceUrl } from "./config";
 
 export const defaultScenePath = "assets/robocasa/layout042_study.xml";
 
+export const suggestedScenePaths = [
+  "assets/robocasa/layout042_sorting.xml",
+  "assets/robocasa/layout024_sorting.xml",
+  "assets/robocasa/layout012_preparing.xml",
+  "assets/robocasa/layout034_preparing.xml",
+  "assets/robocasa/layout038_preparing.xml",
+] as const;
+
 export const defaultSceneConfig: SceneConfig = {
   src: "/",
   sceneFile: defaultScenePath,
