@@ -47,3 +47,18 @@ export function shouldPauseScene({
 export function shouldEnableExploreTools(hasPlan: boolean, exploreMode: boolean) {
   return !hasPlan || exploreMode;
 }
+
+export function planOverlayVisibility({
+  exploreMode,
+  markerCount,
+  pinCount,
+}: {
+  exploreMode: boolean;
+  markerCount: number;
+  pinCount: number;
+}) {
+  return {
+    showOverlay: pinCount > 0 || (!exploreMode && markerCount > 0),
+    showPlanMarkers: !exploreMode,
+  };
+}

@@ -10,8 +10,9 @@
  *  - drag the place ring → new drop XY;
  *  - drag a middle route node → move it; click it (no drag) → delete it;
  *  - click a segment's "+" handle → insert a waypoint at that midpoint.
- * The route's endpoints (start pose + standoff) are backend-owned, so they show
- * as small static dots. Edits raycast a horizontal plane at the marker's height
+ * The route's start is backend-owned; an editable destination uses its chassis
+ * endpoint as the drag handle and maps that delta back to the backend's mount
+ * standoff contract. Edits raycast a horizontal plane at the marker's height
  * and commit the resulting route back to the authored step (which recompiles).
  * While a drag is active we disable OrbitControls via onDragStateChange.
  */
@@ -20,6 +21,7 @@ import { Line } from "@react-three/drei";
 import { DoubleSide } from "three";
 import type { ThreeEvent } from "@react-three/fiber";
 import { colorForRobot } from "../robotVisuals";
+import { mountStandoffForChassisDrag } from "./standoffFrames";
 
 /** A free-standing pin marker (a picked scene-reference position), not tied to
  *  any plan step. Rendered with the same look as a place drop point. */
@@ -48,6 +50,8 @@ export type StepMarker = {
 
 type PlanOverlayProps = {
   markers: StepMarker[];
+  /** Whether to render standoff rings that cannot be dragged. */
+  showReadOnlyStandoffs?: boolean;
   /** Free-standing scene-reference pins (rendered like place points). */
   pins?: PinMarker[];
   /** Pin dragged: new [x, y] for this pin. */
@@ -82,12 +86,26 @@ const PIN_COLOR = "#e0b341"; // scene-reference pin (not robot-owned)
 
 type Drag =
   | { kind: "place"; stepId: string; z: number }
-  | { kind: "standoff"; stepId: string; z: number }
+  | {
+      kind: "standoff";
+      stepId: string;
+      z: number;
+      chassisStart: [number, number];
+      mountStart: [number, number];
+    }
   | { kind: "waypoint"; stepId: string; index: number; z: number; start: [number, number] }
   | { kind: "pin"; pinId: string; z: number };
 
+export function shouldRenderStandoff(
+  marker: Pick<StepMarker, "standoff" | "standoffEditable">,
+  showReadOnlyStandoffs: boolean,
+): marker is Pick<StepMarker, "standoff" | "standoffEditable"> & { standoff: [number, number] } {
+  return !!marker.standoff && (!!marker.standoffEditable || showReadOnlyStandoffs);
+}
+
 export function PlanOverlay({
   markers,
+  showReadOnlyStandoffs = true,
   pins = [],
   onDragPin,
   onDragAt,
@@ -113,9 +131,16 @@ export function PlanOverlay({
 
   const beginStandoffDrag = (m: StepMarker, e: ThreeEvent<PointerEvent>) => {
     if (!m.standoff || !m.standoffEditable) return;
+    const chassisStart = m.route?.length ? m.route[m.route.length - 1] : m.standoff;
     e.stopPropagation();
-    setDrag({ kind: "standoff", stepId: m.id, z: FLOOR_Z });
-    setLive([m.standoff[0], m.standoff[1]]);
+    setDrag({
+      kind: "standoff",
+      stepId: m.id,
+      z: FLOOR_Z,
+      chassisStart,
+      mountStart: m.standoff,
+    });
+    setLive(chassisStart);
     onDragStateChange?.(true);
   };
 
@@ -157,7 +182,10 @@ export function PlanOverlay({
       return;
     }
     if (d.kind === "standoff") {
-      onSetStandoff?.(d.stepId, p);
+      onSetStandoff?.(
+        d.stepId,
+        mountStandoffForChassisDrag(d.mountStart, d.chassisStart, p),
+      );
       return;
     }
     // waypoint: drag = move, tap (no move) = delete.
@@ -229,8 +257,8 @@ export function PlanOverlay({
             );
           }
 
-          // Nodes: endpoints (start pose + standoff) are backend-owned → static
-          // dots; middle nodes are draggable (move) and tappable (delete), shown
+          // Nodes: endpoints have small dots (the editable destination also gets
+          // the larger standoff handle); middle nodes are draggable and tappable, shown
           // as flat cones pointing along the direction of travel (toward the next
           // point) so the route reads as directed. Cone default axis is +Y, so a
           // Z-rotation of (heading - 90°) aims it and a vertical squash lays it flat.
@@ -284,10 +312,13 @@ export function PlanOverlay({
         // filled dot handle (no ring — it would double up with the pick/place
         // ring that sits at the same spot); pick/place (and replay-pinned
         // navigates) show the read-only ring.
-        if (m.standoff) {
+        if (shouldRenderStandoff(m, showReadOnlyStandoffs)) {
           const dragging = drag?.kind === "standoff" && drag.stepId === m.id;
-          const sx = dragging && live ? live[0] : m.standoff[0];
-          const sy = dragging && live ? live[1] : m.standoff[1];
+          const displayStandoff = m.standoffEditable && wp?.length
+            ? wp[wp.length - 1]
+            : m.standoff;
+          const sx = dragging && live ? live[0] : displayStandoff[0];
+          const sy = dragging && live ? live[1] : displayStandoff[1];
           if (m.standoffEditable) {
             nodes.push(
               <group key="standoff" position={[sx, sy, FLOOR_Z]} onPointerDown={(e) => beginStandoffDrag(m, e)}>

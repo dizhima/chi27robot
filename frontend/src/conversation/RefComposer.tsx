@@ -5,6 +5,7 @@ import {
   useImperativeHandle,
   useRef,
 } from "react";
+import { ganttColorsForRobot } from "../robotVisuals";
 
 /**
  * Rich chat composer backed by a single contentEditable div. Text flows
@@ -23,7 +24,12 @@ export type ComposerPart =
   | { type: "ref"; refId: string };
 
 export type ComposerHandle = {
-  insertToken: (refId: string, label: string, kind: "object" | "facility" | "robot" | "position" | "plan_task") => void;
+  insertToken: (
+    refId: string,
+    label: string,
+    kind: "object" | "facility" | "robot" | "position" | "plan_task",
+    robot?: string,
+  ) => void;
   focus: () => void;
   clear: () => void;
   submit: () => void;
@@ -113,13 +119,18 @@ export const RefComposer = forwardRef<ComposerHandle, RefComposerProps>(function
   useImperativeHandle(
     ref,
     () => ({
-      insertToken: (refId, label, kind) => {
+      insertToken: (refId, label, kind, robot) => {
         const editor = editorRef.current;
         if (!editor) return;
         const token = document.createElement("span");
         token.className = `ref-token is-${kind}`;
         token.contentEditable = "false";
         token.dataset.refId = refId;
+        if (kind === "plan_task" && robot) {
+          const colors = ganttColorsForRobot(robot);
+          token.style.setProperty("--robot-bar-background", colors.background);
+          token.style.setProperty("--robot-bar-border", colors.border);
+        }
         token.textContent = kind === "position"
           ? `📍 ${label}`
           : kind === "robot"

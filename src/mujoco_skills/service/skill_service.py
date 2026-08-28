@@ -71,7 +71,16 @@ def active_compiler_version():
 
 
 def _compile_log(message):
-    print(f"[compile-request] {message}", file=sys.stderr, flush=True)
+    """Emit best-effort diagnostics without making compilation depend on I/O.
+
+    On Windows, a service can outlive the terminal or supervisor that owned
+    its stderr pipe.  Writing to that detached handle raises ``OSError(22)``;
+    letting it escape makes a healthy plan look like a compiler failure.
+    """
+    try:
+        print(f"[compile-request] {message}", file=sys.stderr, flush=True)
+    except (BrokenPipeError, OSError, ValueError):
+        pass
 
 
 def _compile_memo_log_suffix(result):

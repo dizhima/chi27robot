@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canEnterExplore,
   canUsePlanPlayback,
+  planOverlayVisibility,
   shouldEnableExploreTools,
   shouldPauseScene,
 } from "./exploreMode";
@@ -29,5 +30,16 @@ describe("explore mode predicates", () => {
     expect(shouldEnableExploreTools(true, false)).toBe(false);
     expect(shouldEnableExploreTools(true, true)).toBe(true);
     expect(shouldEnableExploreTools(false, false)).toBe(true);
+  });
+
+  it("keeps chat pins visible in Explore while hiding plan markers", () => {
+    expect(planOverlayVisibility({ exploreMode: true, markerCount: 2, pinCount: 1 })).toEqual({
+      showOverlay: true,
+      showPlanMarkers: false,
+    });
+    expect(planOverlayVisibility({ exploreMode: true, markerCount: 2, pinCount: 0 })).toEqual({
+      showOverlay: false,
+      showPlanMarkers: false,
+    });
   });
 });

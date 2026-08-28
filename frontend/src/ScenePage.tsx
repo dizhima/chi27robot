@@ -17,12 +17,14 @@ import { SchedulePlayer, type SchedulePlayerHandle } from "./SchedulePlayer";
 import { GanttPanel } from "./plan/GanttPanel";
 import { PlanOverlay, type StepMarker } from "./plan/PlanOverlay";
 import { PlanTaskSubtitles } from "./plan/PlanTaskSubtitles";
+import { chassisEndpointForMountDraft } from "./plan/standoffFrames";
 import { RobotIdentityLabels, type RobotIdentityLabelPick } from "./RobotIdentityLabels";
 import { SceneEntityLabels, type SceneEntityLabelPick } from "./SceneEntityLabels";
 import { ReadyPoseController } from "./ReadyPoseController";
 import {
   canEnterExplore,
   canUsePlanPlayback,
+  planOverlayVisibility,
   shouldEnableExploreTools,
   shouldPauseScene,
 } from "./exploreMode";
@@ -109,6 +111,11 @@ import { resetCameraToScenePresentation, scenePresentationFor } from "./scenePre
 const PLAN_SUBTITLES_STORAGE_KEY = "mujoco-plan-task-subtitles";
 const SHOW_SCENE_OBJECT_LABELS = import.meta.env.VITE_SHOW_SCENE_OBJECT_LABELS !== "false";
 const EXPLORE_ENABLED = import.meta.env.VITE_ENABLE_EXPLORE !== "false";
+// Temporary UI-only switch: keep Explore implemented/configured, but hide its
+// entry without requiring a Vite restart. If HMR lands while already exploring,
+// the Return to plan action remains visible so the user is never trapped there.
+const TEMP_HIDE_EXPLORE_ENTRY = true;
+const SHOW_READ_ONLY_STANDOFFS = import.meta.env.VITE_SHOW_READ_ONLY_STANDOFFS === "true";
 const CHECKPOINT_SAVE_ENABLED = import.meta.env.VITE_ENABLE_CHECKPOINT_SAVE === "true";
 const CHECKPOINT_LOAD_ENABLED = import.meta.env.VITE_ENABLE_CHECKPOINT_LOAD === "true";
 const STUDY_TARGET_LOAD_ENABLED = import.meta.env.VITE_ENABLE_STUDY_TARGET_LOAD === "true";
@@ -684,12 +691,17 @@ export default function ScenePage() {
       let marker: StepMarker = sp;
       const at = draftAt.get(id);
       if (at && sp.at) marker = { ...marker, at: [at[0], at[1], sp.at[2]] };
-      // Standoff override moves the dwell ring and, for a navigate, the route's
-      // end point (S), so a drag shows before recompile.
+      // The backend's route endpoint is the chassis centre, while `standoff`
+      // remains the manipulation mount coordinate. Map only the draft delta
+      // across those frames so the draggable chassis endpoint previews locally
+      // without changing the backend contract.
       const standoff = marker.standoffEditable ? draftStandoff.get(id) : undefined;
       if (standoff) marker = { ...marker, standoff };
       const viaPoints = draftVia.get(id);
-      const endS = standoff ?? (sp.route ? sp.route[sp.route.length - 1] : undefined);
+      const compiledEnd = sp.route ? sp.route[sp.route.length - 1] : undefined;
+      const endS = standoff && sp.standoff && compiledEnd
+        ? chassisEndpointForMountDraft(compiledEnd, sp.standoff, standoff)
+        : compiledEnd;
       if (sp.route && sp.route.length >= 2 && (viaPoints || standoff)) {
         marker = {
           ...marker,
@@ -1138,6 +1150,11 @@ export default function ScenePage() {
         .map((r) => ({ id: r.id, at: r.xyz })),
     [contextRefs],
   );
+  const overlayVisibility = planOverlayVisibility({
+    exploreMode,
+    markerCount: markers.length,
+    pinCount: pins.length,
+  });
 
   // A double-click pick becomes a ref + an inline composer token. Object hits
   // highlight the body (no marker); surface/floor hits drop a pin marker.
@@ -1239,7 +1256,7 @@ export default function ScenePage() {
       const id = crypto.randomUUID();
       const ref = planTaskRefFromAction(id, action);
       setPlanRefs((refs) => [...refs, ref]);
-      composerRef.current?.insertToken(id, `${action.robot} · ${ref.label}`, "plan_task");
+      composerRef.current?.insertToken(id, `${action.robot} · ${ref.label}`, "plan_task", action.robot);
       composerRef.current?.focus();
     },
     [actionsById],
@@ -1467,6 +1484,7 @@ export default function ScenePage() {
             type: "ref",
             label: `${planRef.robot} · ${planRef.label}`,
             kind: "plan_task",
+            robot: planRef.robot,
           });
         }
       }
@@ -1949,9 +1967,10 @@ export default function ScenePage() {
                   onComplete={() => setSchedulePlaying(false)}
                 />
               ) : null}
-              {!exploreMode && (markers.length > 0 || pins.length > 0) ? (
+              {overlayVisibility.showOverlay ? (
                 <PlanOverlay
-                  markers={markers}
+                  markers={overlayVisibility.showPlanMarkers ? markers : []}
+                  showReadOnlyStandoffs={SHOW_READ_ONLY_STANDOFFS}
                   pins={pins}
                   onDragPin={handleDragPin}
                   onDragStateChange={setMarkerDragging}
@@ -1998,7 +2017,7 @@ export default function ScenePage() {
             >
               Reset
             </button>
-            {EXPLORE_ENABLED ? (
+            {EXPLORE_ENABLED && (!TEMP_HIDE_EXPLORE_ENTRY || exploreMode) ? (
               <button
                 type="button"
                 className={`scene-explore-button${exploreMode ? " is-active" : ""}`}
@@ -2020,16 +2039,6 @@ export default function ScenePage() {
           </main>
 
           <aside className="chat-rail" aria-label="Assistant">
-            <div className="chat-rail-head">
-              Assistant
-              <span className="chat-rail-status">
-                {(() => {
-                  if (!turnBusy) return "Ready";
-                  const working = [...messages].reverse().find((m) => m.status === "working");
-                  return working?.intent === "resolve" ? "Resolving…" : "Thinking…";
-                })()}
-              </span>
-            </div>
             <div
               className="chat-rail-body"
               aria-live="polite"

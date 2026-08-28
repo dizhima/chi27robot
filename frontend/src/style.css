@@ -95,22 +95,6 @@ canvas {
   color: #e8eef0;
 }
 
-.chat-rail-head {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 10px 12px;
-  font-weight: 600;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.chat-rail-status {
-  font-size: 11px;
-  font-weight: 500;
-  color: rgba(232, 238, 240, 0.5);
-}
-
 .chat-rail-body {
   flex: 1;
   min-height: 0;
@@ -373,9 +357,9 @@ canvas {
 }
 
 .ref-token.is-plan_task {
-  border-color: rgba(94, 176, 138, 0.72);
-  background: rgba(94, 176, 138, 0.18);
-  color: #d9f5e5;
+  border-color: var(--robot-bar-border, rgba(94, 176, 138, 0.72));
+  background: var(--robot-bar-background, rgba(94, 176, 138, 0.18));
+  color: #f4f7ff;
 }
 
 .ref-token:hover {
@@ -821,8 +805,8 @@ canvas {
   position: absolute;
   inset: 0;
   box-sizing: border-box;
-  border: 1px solid rgba(80, 160, 230, 0.5);
-  background: rgba(55, 138, 221, 0.28);
+  border: 1px solid var(--robot-bar-border, rgba(80, 160, 230, 0.5));
+  background: var(--robot-bar-background, rgba(55, 138, 221, 0.28));
   border-radius: 4px;
   padding: 0 8px;
   overflow: hidden;
@@ -836,11 +820,6 @@ canvas {
 .gantt-bar-frame.has-remove .gantt-bar {
   padding-right: 24px;
   padding-left: 24px;
-}
-
-.gantt-bar.is-support {
-  border-color: rgba(184, 126, 232, 0.64);
-  background: rgba(137, 82, 190, 0.32);
 }
 
 .gantt-bar-frame.is-pending-removal .gantt-bar {
@@ -917,11 +896,7 @@ canvas {
 
 .gantt-bar.is-estimated {
   border-style: dashed;
-  background: rgba(55, 138, 221, 0.18);
-}
-
-.gantt-bar.is-support.is-estimated {
-  background: rgba(137, 82, 190, 0.2);
+  background: color-mix(in srgb, var(--robot-bar-background, rgba(55, 138, 221, 0.28)) 65%, transparent);
 }
 
 .gantt-bar.is-selected {
@@ -942,10 +917,9 @@ canvas {
 
 /* Unsynced `after` dependency. The waiting task has already been shifted so its
    left edge meets the anchor's right edge; these outlines say which two bars the
-   shift came from. Teal is unclaimed elsewhere in the Gantt (blue = selection
-   and snap, amber = conflicts, purple = support tasks), and both are solid
-   because dashed already means ghost, estimated, and pending removal. The
-   anchor is the fainter of the two: it did not move. */
+   shift came from. Teal is unclaimed by the robot identity fills or other Gantt
+   states, and both are solid because dashed already means ghost, estimated, and
+   pending removal. The anchor is the fainter of the two: it did not move. */
 .gantt-bar.is-after-waiter {
   outline: 2px solid #34d399;
   outline-offset: 1px;
@@ -2247,7 +2221,6 @@ html[data-ui-theme="light"] .scene-launcher-panel {
   box-shadow: 0 18px 54px var(--ui-shadow);
 }
 
-html[data-ui-theme="light"] .chat-rail-head,
 html[data-ui-theme="light"] .gantt-panel,
 html[data-ui-theme="light"] .authoring-workspace-header,
 html[data-ui-theme="light"] .authoring-chat,
@@ -2269,7 +2242,6 @@ html[data-ui-theme="light"] .timeline-panel {
   background: var(--ui-panel-subtle);
 }
 
-html[data-ui-theme="light"] .chat-rail-status,
 html[data-ui-theme="light"] .chat-rail-hint,
 html[data-ui-theme="light"] .chat-rail-message strong,
 html[data-ui-theme="light"] .chat-assistant.is-working,
@@ -2387,6 +2359,12 @@ html[data-ui-theme="light"] .ref-token.is-plan_task {
   color: #205c3f;
 }
 
+html[data-ui-theme="light"] .ref-token.is-plan_task {
+  border-color: var(--robot-bar-border, rgba(94, 176, 138, 0.72));
+  background: var(--robot-bar-background, #e5f3eb);
+  color: #17384f;
+}
+
 html[data-ui-theme="light"] .ref-token.is-position,
 html[data-ui-theme="light"] .ref-token.is-facility,
 html[data-ui-theme="light"] .ref-token.message-ref-chip.is-facility {
@@ -2486,10 +2464,6 @@ html[data-ui-theme="light"] .gantt-ruler-mark {
 
 html[data-ui-theme="light"] .gantt-bar-label {
   color: #17384f;
-}
-
-html[data-ui-theme="light"] .gantt-bar.is-support .gantt-bar-label {
-  color: #4f2d68;
 }
 
 html[data-ui-theme="light"] .gantt-bar-remove {

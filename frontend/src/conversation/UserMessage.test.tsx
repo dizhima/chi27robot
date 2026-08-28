@@ -16,11 +16,14 @@ describe("UserMessage", () => {
         { type: "ref", label: "upper_cabinet", kind: "facility" },
         { type: "ref", label: "robot0", kind: "robot" },
         { type: "text", value: " in " },
-        { type: "ref", label: "robot0 · banana_2 → fridge", kind: "plan_task" },
+        { type: "ref", label: "robot0 · banana_2 → fridge", kind: "plan_task", robot: "robot0" },
+        { type: "ref", label: "robot1 · open fridge", kind: "plan_task" },
       ],
     };
 
     const { container } = render(<UserMessage message={message} />);
+    expect(screen.queryByText("You")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Your message")).toHaveClass("is-user");
     expect(screen.getByText("banana_2")).toHaveClass(
       "ref-token",
       "is-object",
@@ -28,10 +31,19 @@ describe("UserMessage", () => {
     );
     expect(screen.getByText(/◇ upper_cabinet/)).toHaveClass("is-facility", "message-ref-token");
     expect(screen.getByText(/● robot0/)).toHaveClass("is-robot", "message-ref-token");
-    expect(screen.getByText(/robot0 · banana_2 → fridge/)).toHaveClass(
+    const robot0Task = screen.getByText(/robot0 · banana_2 → fridge/);
+    expect(robot0Task).toHaveClass(
       "is-plan_task",
       "message-ref-token",
     );
+    expect(robot0Task).toHaveStyle({
+      "--robot-bar-background": "rgba(55, 138, 221, 0.28)",
+      "--robot-bar-border": "rgba(80, 160, 230, 0.5)",
+    });
+    expect(screen.getByText(/robot1 · open fridge/)).toHaveStyle({
+      "--robot-bar-background": "rgba(219, 74, 148, 0.28)",
+      "--robot-bar-border": "rgba(244, 114, 182, 0.55)",
+    });
     expect(container.querySelector("a")).not.toBeInTheDocument();
     expect(container.querySelector("button")).not.toBeInTheDocument();
     expect(container).not.toHaveTextContent("plan task t1");

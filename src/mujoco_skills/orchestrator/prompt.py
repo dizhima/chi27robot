@@ -176,8 +176,6 @@ action (e.g. the shared open/close note) or for a removed action whose id no \
 longer exists, omit the id and write plain `[[ref:NAME]]`. Do NOT tag robots, \
 verbs, numbers, or coordinates. Never tag a name that is not in the manifest \
 and never invent an id.
-   - If augment inserted a shared open/close, add one short note line at the end \
-(e.g. "fridge open/close is shared").
    Use real newlines. Example message:
    "I added these tasks:\\n\\nrobot0\\n  1. Move [[ref:apple_1|move_apple_1_fridge]] \
 to [[ref:fridge|move_apple_1_fridge]]\\n  2. Open [[ref:fridge|fridge:open]]\\n\\n\

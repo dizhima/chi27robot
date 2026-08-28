@@ -46,7 +46,7 @@ describe("GanttPanel timeline ruler", () => {
   });
 
   it("uses scene identity colors for enlarged robot lane labels", () => {
-    render(
+    const { container } = render(
       <GanttPanel
         bars={bars}
         lanes={["robot0", "robot1"]}
@@ -61,6 +61,16 @@ describe("GanttPanel timeline ruler", () => {
     expect(robot1).toHaveStyle({ "--robot-color": "#f472b6" });
     expect(robot0?.querySelector(".gantt-lane-dot")).not.toBeNull();
     expect(robot1?.querySelector(".gantt-lane-dot")).not.toBeNull();
+
+    const tracks = container.querySelectorAll(".gantt-track");
+    expect(tracks[0]).toHaveStyle({
+      "--robot-bar-background": "rgba(55, 138, 221, 0.28)",
+      "--robot-bar-border": "rgba(80, 160, 230, 0.5)",
+    });
+    expect(tracks[1]).toHaveStyle({
+      "--robot-bar-background": "rgba(219, 74, 148, 0.28)",
+      "--robot-bar-border": "rgba(244, 114, 182, 0.55)",
+    });
   });
 
   it("creates readable ticks including both schedule endpoints", () => {
@@ -279,6 +289,8 @@ describe("GanttPanel timeline ruler", () => {
     fireEvent.pointerMove(window, { clientX: 400, clientY: 45 });
     expect(container.querySelector(".gantt-track.is-drop-target")).toBe(tracks[1]);
     expect(container.querySelector(".gantt-insert-caret")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "task a" }).parentElement)
+      .toHaveStyle({ transform: "translateY(40px)" });
     fireEvent.pointerUp(window);
 
     expect(onMoveTask).toHaveBeenCalledWith("a", "robot1", "b");
@@ -394,6 +406,9 @@ describe("GanttPanel timeline ruler", () => {
     fireEvent.pointerMove(window, { clientX: 625, clientY: 45, shiftKey: true });
     expect(container.querySelector(".gantt-after-caret")).not.toBeNull();
     expect(container.querySelector(".gantt-insert-caret")).toBeNull();
+    expect(tracks[0]).toContainElement(screen.getByRole("button", { name: "task a" }));
+    expect(screen.getByRole("button", { name: "task a" }).parentElement)
+      .not.toHaveStyle({ transform: "translateY(40px)" });
     fireEvent.pointerUp(window);
 
     expect(onSetTaskAfter).toHaveBeenCalledWith("a", "b");

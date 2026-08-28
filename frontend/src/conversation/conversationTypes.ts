@@ -24,6 +24,8 @@ export type UserMessageDisplayPart =
       type: "ref";
       label: string;
       kind: "object" | "facility" | "robot" | "position" | "plan_task";
+      /** Robot identity for plan-task chips; absent on legacy transcript data. */
+      robot?: string;
     };
 
 /** Unified message model. Superset of the old ChatMessage (role/content/source

@@ -15,7 +15,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { ganttLanes, ganttTotal, isSupportTaskBar, type GanttBar } from "./ganttModel";
 import { clusterConflicts } from "./ganttConflicts";
 import type { Conflict } from "./planTypes";
-import { colorForRobot } from "../robotVisuals";
+import { colorForRobot, ganttColorsForRobot } from "../robotVisuals";
 
 type GanttPanelProps = {
   bars: GanttBar[];
@@ -75,6 +75,9 @@ type GanttPanelProps = {
 const fmt = (s: number) => `${s.toFixed(1)}s`;
 const DRAG_THRESHOLD_PX = 4;
 const SNAP_FRACTION = 0.05;
+// Temporary presentation-only switch. Warning/conflict data and timeline
+// markers remain active; only the compact header badge/popover entry is hidden.
+const TEMP_HIDE_WARNING_BADGE = true;
 
 type DragState = {
   kind: "task" | "dependency";
@@ -278,7 +281,11 @@ export function GanttPanel({
         d.afterActionId = target?.group ?? null;
         d.snapId = target?.key ?? null;
         d.taskDropKind = target ? "dependency" : null;
-        d.topOffsetPx = target ? laneOffset : 0;
+        // A dependency drop aligns the source task in time with a task on the
+        // other robot, but it does not reassign the source task. Keep the
+        // dragged bar on its own lane; the target-lane caret still identifies
+        // which cross-robot task supplies the dependency.
+        d.topOffsetPx = 0;
         if (target) d.leftPct = ((target.start + target.duration) / total) * 100;
         return;
       }
@@ -411,7 +418,7 @@ export function GanttPanel({
             {viewMode === "task" ? "▭ task" : "≣ step"}
           </button>
         ) : null}
-        {badgeCount > 0 ? (
+        {!TEMP_HIDE_WARNING_BADGE && badgeCount > 0 ? (
           <div className="gantt-warn-anchor" ref={warnAnchorRef}>
             <button
               type="button"
@@ -511,17 +518,23 @@ export function GanttPanel({
               <span className="gantt-ruler-label">{draftProjection ? "order" : "time"}</span>
             </div>
             <div className="gantt-tracks" ref={tracksRef}>
-              {collapsed ? null : lanes.map((robot) => (
-                <div
-                  key={robot}
-                  ref={(node) => {
-                    if (node) laneRefs.current.set(robot, node);
-                    else laneRefs.current.delete(robot);
-                  }}
-                  className={"gantt-track" + (drag?.kind === "task"
-                    && drag.targetRobot === robot
-                    && drag.taskDropKind !== null ? " is-drop-target" : "")}
-                >
+              {collapsed ? null : lanes.map((robot) => {
+                const barColors = ganttColorsForRobot(robot);
+                return (
+                  <div
+                    key={robot}
+                    ref={(node) => {
+                      if (node) laneRefs.current.set(robot, node);
+                      else laneRefs.current.delete(robot);
+                    }}
+                    className={"gantt-track" + (drag?.kind === "task"
+                      && drag.targetRobot === robot
+                      && drag.taskDropKind !== null ? " is-drop-target" : "")}
+                    style={{
+                      "--robot-bar-background": barColors.background,
+                      "--robot-bar-border": barColors.border,
+                    } as CSSProperties}
+                  >
                   {ghostBars
                     .filter((bar) => bar.robot === robot)
                     .map((bar) => (
@@ -631,8 +644,9 @@ export function GanttPanel({
                       title="Wait for this task"
                     />
                   ) : null}
-                </div>
-              ))}
+                  </div>
+                );
+              })}
               {!collapsed && clusters.length > 0 ? (
                 <div className="gantt-marker-row">
                   {clusters.map((cluster, index) => (
