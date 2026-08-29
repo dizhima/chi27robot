@@ -1,10 +1,10 @@
 import type { GanttBar } from "./ganttModel";
-
-const ROBOTS = ["robot0", "robot1"] as const;
+import { colorForRobot } from "../robotVisuals";
 
 type PlanTaskSubtitlesProps = {
   bars: GanttBar[];
   time: number;
+  robotIds: string[];
 };
 
 /** Compiler-only coordination tasks are deliberately not presented as user work. */
@@ -35,13 +35,22 @@ export function activeTaskLabel(
   return active?.label.trim() || null;
 }
 
-export function PlanTaskSubtitles({ bars, time }: PlanTaskSubtitlesProps) {
+function robotDisplayName(robot: string): string {
+  const match = /^robot(\d+)$/.exec(robot);
+  return match ? `Robot ${match[1]}` : robot;
+}
+
+export function PlanTaskSubtitles({ bars, time, robotIds }: PlanTaskSubtitlesProps) {
   return (
     <section className="plan-task-subtitles" aria-label="Current robot tasks">
-      {ROBOTS.map((robot, index) => (
+      {robotIds.map((robot) => (
         <div className="plan-task-subtitle-row" key={robot}>
-          <span className={`plan-task-subtitle-dot robot-${index}`} aria-hidden="true" />
-          <span className="plan-task-subtitle-name">Robot {index}:</span>
+          <span
+            className="plan-task-subtitle-dot"
+            style={{ background: colorForRobot(robot) }}
+            aria-hidden="true"
+          />
+          <span className="plan-task-subtitle-name">{robotDisplayName(robot)}:</span>
           <span className="plan-task-subtitle-task">
             {activeTaskLabel(bars, robot, time) ?? "—"}
           </span>

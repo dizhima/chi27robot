@@ -39,7 +39,7 @@ from mujoco_skills.orchestrator.resolver_v2 import (
     render_v2_report,
     run_resolution_v2,
 )
-from mujoco_skills.orchestrator.schema import SemanticTask
+from mujoco_skills.orchestrator.schema import SemanticTask, robot_ids_from_manifest
 from mujoco_skills.orchestrator.stage1 import ground
 from mujoco_skills.service.scene_runtime import scene_runtime_from_env
 
@@ -369,6 +369,7 @@ def resolve_v2_core(body: dict, *, provider=None, compile_fn=None,
             initial_compile_result = compile_fn(plan)
     flat_plan = completed_plan_or_candidate(initial_compile_result, plan)
     require_exact_after_edges(flat_plan, protected)
+    robot_ids = robot_ids_from_manifest(load_manifest())
     final_flat, report, final_compile_result = run_resolution_v2(
         flat_plan,
         compile_fn,
@@ -379,6 +380,7 @@ def resolve_v2_core(body: dict, *, provider=None, compile_fn=None,
         on_event=on_event,
         protected=protected,
         topology_check_fn=topology_check_fn,
+        robot_ids=robot_ids,
     )
     # run_resolution_v2 did not perform the fallback compile itself.
     if not initial_snapshot_reused:
@@ -426,10 +428,15 @@ def do_resolve_conflicts(body: dict, *, provider=None, compile_fn=None,
     )
     require_exact_after_edges(flat_plan, protected)
     llm = provider or OpenAIProvider()
+    robot_ids = robot_ids_from_manifest(load_manifest())
     final_flat, report = run_resolution_loop(
         flat_plan,
         compile_fn,
-        lambda payload: propose_repairs(payload, llm),
+        lambda payload: propose_repairs(
+            payload,
+            llm,
+            robot_ids=robot_ids,
+        ),
         initial_compile_result=initial_compile_result,
         topology_check_fn=topology_check_fn,
         protected=protected,

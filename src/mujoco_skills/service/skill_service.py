@@ -227,9 +227,22 @@ def _warm():
     # prime the rig cache + config so the first request is fast too
     island = json.loads(STANDOFFS.read_text("utf-8"))["island_bbox"]
     ready = sg.load_ready(TRACKS)
-    for r in (0, 1):
-        sg.get_rig(SCENE, r, ready, island)
-    print(f"[skill_service] warm: scene={Path(SCENE).name} rigs=robot0,robot1")
+    manifest = json.loads(MANIFEST.read_text("utf-8"))
+    warmed = []
+    for position, (robot_id, descriptor) in enumerate(
+        manifest.get("robots", {}).items()
+    ):
+        robot_index = (
+            descriptor.get("index", position)
+            if isinstance(descriptor, dict)
+            else position
+        )
+        sg.get_rig(SCENE, int(robot_index), ready, island)
+        warmed.append(robot_id)
+    print(
+        f"[skill_service] warm: scene={Path(SCENE).name} "
+        f"rigs={','.join(warmed)}"
+    )
 
 
 def _compile_uncached(plan, plan_key, *, progress_callback=None):

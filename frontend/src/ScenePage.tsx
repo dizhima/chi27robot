@@ -107,6 +107,7 @@ import { ScenePathPicker } from "./ScenePathPicker";
 import { loadSceneManifest } from "./authoring/grounding";
 import type { SceneManifest } from "./authoring/types";
 import { resetCameraToScenePresentation, scenePresentationFor } from "./scenePresentation";
+import { robotIdsFromManifest } from "./robotRegistry";
 
 const PLAN_SUBTITLES_STORAGE_KEY = "mujoco-plan-task-subtitles";
 const SHOW_SCENE_OBJECT_LABELS = import.meta.env.VITE_SHOW_SCENE_OBJECT_LABELS !== "false";
@@ -399,6 +400,7 @@ export default function ScenePage() {
   const [planRefMode, setPlanRefMode] = useState(false);
   const composerRef = useRef<ComposerHandle | null>(null);
   const [manifest, setManifest] = useState<SceneManifest | null>(null);
+  const robotIds = useMemo(() => robotIdsFromManifest(manifest), [manifest]);
   const bodyIndex = useMemo(
     () => (manifest ? buildBodyIndex(manifest) : new Map()),
     [manifest],
@@ -2007,7 +2009,7 @@ export default function ScenePage() {
               <directionalLight position={[1, 2, 5]} intensity={1.2} />
             </MujocoCanvas>
             {planSubtitlesEnabled && schedulePlaying ? (
-              <PlanTaskSubtitles bars={taskBars} time={scheduleTime} />
+              <PlanTaskSubtitles bars={taskBars} time={scheduleTime} robotIds={robotIds} />
             ) : null}
             <button
               type="button"
@@ -2166,7 +2168,7 @@ export default function ScenePage() {
           bars={viewBars}
           ghostBars={ghostBars}
           draftProjection={showDraftProjection}
-          lanes={["robot0", "robot1"]}
+          lanes={robotIds}
           warnings={shownWarnings}
           conflicts={showPreview ? [] : conflicts}
           time={scheduleTime}

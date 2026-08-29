@@ -374,11 +374,27 @@ def main():
         help="Scene XML used to solve and collision-check the release tail.")
     parser.add_argument(
         "--tracks-dir", type=Path, default=TRACKS,
-        help="Canonical track root containing robot0/ and robot1/.")
+        help="Canonical track root containing robotN/ directories.")
+    parser.add_argument(
+        "--robot", type=int, action="append", default=None,
+        help="robot index to process; repeat as needed. By default, discover "
+             "every robotN/OpenFridge.track.json under --tracks-dir.")
     parser.add_argument("--distance", type=float, default=0.16)
     parser.add_argument("--steps", type=int, default=4)
     parser.add_argument("--duration", type=float, default=0.8)
     args = parser.parse_args()
+
+    robots = args.robot
+    if robots is None:
+        robots = sorted(
+            int(path.parent.name.removeprefix("robot"))
+            for path in args.tracks_dir.glob("robot*/OpenFridge.track.json")
+            if path.parent.name.removeprefix("robot").isdigit()
+        )
+    if not robots:
+        raise SystemExit(
+            f"no robotN/OpenFridge.track.json found under {args.tracks_dir}"
+        )
 
     generated = [
         build_augmented_track(
@@ -389,13 +405,13 @@ def main():
             scene=args.scene,
             tracks=args.tracks_dir,
         )
-        for robot in (0, 1)
+        for robot in robots
     ]
     for _, _, _, report in generated:
         print(json.dumps(report, ensure_ascii=False))
 
     if not args.apply:
-        print("dry-run only; pass --apply to back up and replace both tracks")
+        print("dry-run only; pass --apply to back up and replace the tracks")
         return
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")

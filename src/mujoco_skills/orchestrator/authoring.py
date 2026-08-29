@@ -23,14 +23,18 @@ from mujoco_skills.orchestrator.schema import (
     Message,
     SemanticTask,
     ToolSpec,
+    robot_ids_from_manifest,
+    schema_for_robot_ids,
 )
 
 AUGMENT_TOOL = ToolSpec(
     name="augment",
     description=(
         "Deterministically expand affected move intents into ordered semantic "
-        "move/open/close actions. Call this only for newly added or changed "
-        "moves, never for unchanged current_plan actions."
+        "move/open/close actions. An optional robot on a new intent makes it "
+        "the explicit owner of its shared source/destination workflow. Call "
+        "this only for newly added or changed moves, never for unchanged "
+        "current_plan actions."
     ),
     parameters=AUGMENT_INPUT_SCHEMA,
 )
@@ -122,6 +126,15 @@ AUTHORING_TOOLS = (
 )
 
 
+def authoring_tools(manifest: dict) -> list[ToolSpec]:
+    """Bind robot-selecting tools to the active scene's robot registry."""
+    robot_ids = robot_ids_from_manifest(manifest)
+    return [
+        replace(tool, parameters=schema_for_robot_ids(tool.parameters, robot_ids))
+        for tool in AUTHORING_TOOLS
+    ]
+
+
 def author(
     messages: list[dict],
     current_plan: list[AugmentedAction],
@@ -173,7 +186,7 @@ def author(
     full_history = loop.run(
         str(messages[latest_index].get("content", "")),
         provider,
-        list(AUTHORING_TOOLS),
+        authoring_tools(manifest),
         executor.execute,
         history=history,
         max_iters=max_iters,
@@ -466,7 +479,7 @@ class _AuthoringExecutor:
         Explicit slots are strict; when no slot is supplied, candidates are
         searched nearest to the actions' prior document position.
         """
-        if robot not in {"robot0", "robot1"}:
+        if robot not in set(robot_ids_from_manifest(self.manifest)):
             raise ValueError(f"invalid robot {robot!r}")
         if not isinstance(raw_ids, list) or not raw_ids:
             raise ValueError("reassign requires a non-empty action_ids array")
@@ -1487,15 +1500,20 @@ def _parse_move_intents(raw_actions: object, manifest: dict) -> list[SemanticTas
     if not isinstance(raw_actions, list):
         raise ValueError("augment requires an actions array")
     intents = []
+    valid_robots = set(robot_ids_from_manifest(manifest))
     for raw in raw_actions:
         if not isinstance(raw, dict):
             raise ValueError("augment actions must be objects")
+        robot = raw.get("robot")
+        if robot is not None and robot not in valid_robots:
+            raise ValueError(f"invalid robot {robot!r}")
         intents.append(
             SemanticTask(
                 id=str(raw.get("id") or ""),
                 action=str(raw.get("action") or ""),
                 object=str(raw.get("object") or ""),
                 dest=str(raw.get("dest") or ""),
+                robot=robot,
             )
         )
     return intents
@@ -1537,7 +1555,7 @@ def _parse_plan_actions(raw_actions: object, manifest: dict) -> list[AugmentedAc
         )
         if not action.id or action.id in seen_ids:
             raise ValueError(f"duplicate or empty action id {action.id!r}")
-        if action.robot not in {"robot0", "robot1"}:
+        if action.robot not in set(robot_ids_from_manifest(manifest)):
             raise ValueError(f"invalid robot {action.robot!r}")
         if action.op == "move":
             if action.object not in objects:

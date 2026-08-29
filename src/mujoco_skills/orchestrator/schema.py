@@ -14,6 +14,7 @@ multi-provider support is the message/tool-result round-trip, not this file.
 
 from __future__ import annotations
 
+import copy
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +22,57 @@ from pathlib import Path
 # service/llm_tools.json lives next to skill_service.py; from this file that is
 # ../service/llm_tools.json.
 DEFAULT_TOOLS_PATH = Path(__file__).resolve().parents[1] / "service" / "llm_tools.json"
+
+
+DEFAULT_ROBOT_IDS = ("robot0", "robot1")
+
+
+def robot_ids_from_manifest(manifest: dict | None) -> tuple[str, ...]:
+    """Return the manifest robot ids in stable scene order.
+
+    Older unit fixtures and callers that predate the robot registry are kept
+    compatible with the original two-robot scene.  Real scene manifests carry
+    a non-empty ``robots`` mapping; its ``index`` field is the primary order
+    and insertion order is the deterministic tie breaker.
+    """
+    robots = (manifest or {}).get("robots")
+    if not isinstance(robots, dict) or not robots:
+        return DEFAULT_ROBOT_IDS
+    entries = []
+    for position, (robot_id, descriptor) in enumerate(robots.items()):
+        if not isinstance(robot_id, str) or not robot_id:
+            raise ValueError("manifest robot ids must be non-empty strings")
+        index = descriptor.get("index") if isinstance(descriptor, dict) else None
+        entries.append((index if isinstance(index, int) else position, position, robot_id))
+    entries.sort()
+    return tuple(robot_id for _, _, robot_id in entries)
+
+
+def schema_for_robot_ids(schema: dict, robot_ids: tuple[str, ...] | list[str]) -> dict:
+    """Copy a JSON schema and bind every robot selector to this scene."""
+    ids = list(robot_ids)
+    if not ids:
+        raise ValueError("at least one robot id is required")
+    result = copy.deepcopy(schema)
+
+    def bind(node):
+        if not isinstance(node, dict):
+            return
+        properties = node.get("properties")
+        if isinstance(properties, dict):
+            for name in ("robot", "to_robot"):
+                field = properties.get(name)
+                if isinstance(field, dict) and field.get("type") == "string":
+                    field["enum"] = ids
+        for value in node.values():
+            if isinstance(value, dict):
+                bind(value)
+            elif isinstance(value, list):
+                for item in value:
+                    bind(item)
+
+    bind(result)
+    return result
 
 
 @dataclass(frozen=True)
@@ -68,6 +120,9 @@ class SemanticTask:
     action: str  # only "move" today; articulation actions may be added later
     object: str  # a name from manifest["objects"]
     dest: str    # a name from manifest["facilities"] whose `place` is non-null
+    # Optional authoring-time ownership requested explicitly by the user.
+    # Grounding-stage callers leave this unset.
+    robot: str | None = None
 
 
 @dataclass
@@ -157,7 +212,7 @@ AUGMENTED_ACTIONS_SCHEMA = {
                 "type": "object",
                 "properties": {
                     "id": {"type": "string"},
-                    "robot": {"type": "string", "enum": ["robot0", "robot1"]},
+                    "robot": {"type": "string"},
                     "op": {
                         "type": "string",
                         "enum": ["move", "open", "close", "go_to"],
@@ -226,6 +281,15 @@ AUGMENT_INPUT_SCHEMA = {
                     "action": {"type": "string", "enum": ["move"]},
                     "object": {"type": "string"},
                     "dest": {"type": "string"},
+                    "robot": {
+                        "type": "string",
+                        "description": (
+                            "Optional explicit robot owner for this new move. "
+                            "Moves sharing a source or destination inherit the "
+                            "same owner when there is no conflicting explicit "
+                            "assignment."
+                        ),
+                    },
                 },
                 "required": ["id", "action", "object", "dest"],
                 "additionalProperties": False,
@@ -249,7 +313,7 @@ REASSIGN_INPUT_SCHEMA = {
                 "destination workflow."
             ),
         },
-        "robot": {"type": "string", "enum": ["robot0", "robot1"]},
+        "robot": {"type": "string"},
         "after_action_id": {
             "type": ["string", "null"],
             "description": (
@@ -437,17 +501,25 @@ def to_gemini(tool: ToolSpec) -> dict:
     }
 
 
-def load_tools(path: str | Path = DEFAULT_TOOLS_PATH) -> list[ToolSpec]:
-    """Load ToolSpecs from an llm_tools.json file (OpenAI-format entries)."""
+def load_tools(
+    path: str | Path = DEFAULT_TOOLS_PATH,
+    *,
+    manifest: dict | None = None,
+) -> list[ToolSpec]:
+    """Load ToolSpecs and optionally bind selectors to manifest robots."""
     data = json.loads(Path(path).read_text("utf-8"))
     specs: list[ToolSpec] = []
     for entry in data.get("tools", []):
         fn = entry["function"]  # entries are {"type":"function","function":{...}}
+        parameters = fn.get("parameters", {"type": "object", "properties": {}})
+        if manifest is not None:
+            parameters = schema_for_robot_ids(
+                parameters, robot_ids_from_manifest(manifest))
         specs.append(
             ToolSpec(
                 name=fn["name"],
                 description=fn.get("description", ""),
-                parameters=fn.get("parameters", {"type": "object", "properties": {}}),
+                parameters=parameters,
             )
         )
     return specs

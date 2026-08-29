@@ -17,10 +17,17 @@ describe("PlanTaskSubtitles", () => {
     expect(activeTaskLabel(bars, "robot1", 4)).toBe("spoon_2 → island");
   });
 
-  it("suppresses detours and go-to-rest tasks while retaining both robot rows", () => {
-    render(<PlanTaskSubtitles bars={bars} time={2} />);
+  it("suppresses support tasks while retaining every manifest robot row", () => {
+    render(
+      <PlanTaskSubtitles
+        bars={bars}
+        time={2}
+        robotIds={["robot0", "robot1", "robot2"]}
+      />,
+    );
     expect(screen.getByText("Robot 0:")).toBeInTheDocument();
     expect(screen.getByText("Robot 1:")).toBeInTheDocument();
+    expect(screen.getByText("Robot 2:")).toBeInTheDocument();
     expect(screen.getByText("bowl_1 → island")).toBeInTheDocument();
     expect(screen.queryByText("detour")).not.toBeInTheDocument();
   });

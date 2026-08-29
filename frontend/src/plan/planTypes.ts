@@ -8,7 +8,10 @@
  * by the LLM; the backend fills them and echoes them back on `completed`.
  */
 
-export type RobotName = "robot0" | "robot1";
+/** Runtime robot id from the active scene manifest (for example, robot2). */
+export type RobotId = string;
+/** Backward-compatible name retained for plan helper imports. */
+export type RobotName = RobotId;
 
 /**
  * One authored step. `op` is navigate|pick|place|reset|wait or an articulation

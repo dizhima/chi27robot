@@ -44,14 +44,17 @@ name `island`; never invent a new facility named `table`. The normal \
 `can_place=true` requirement still applies when the island is used as a move \
 destination.
 5. For every newly added move, call `augment` with only the affected move \
-intents. Give each intent a stable id not already used by an \
+intents. If the latest request explicitly assigns a robot to a new move or \
+batch, include that `robot` on every affected intent in the same call. Give \
+each intent a stable id not already used by an \
 action or `serves` value in current_plan. Do not call augment on the entire \
 current_plan and do not pass unchanged moves, because doing so could undo \
 manual edits.
 6. `augment` is authoritative for generated move/open/close actions and default \
-workload-based robot assignment. Moves to one destination may use different \
-robots; the destination is a synchronization domain, not robot ownership. Merge \
-the relevant returned actions into current_plan. When adding \
+robot assignment. It keeps a batch that shares a pickup facility or destination \
+on one robot when possible; unrelated batches are then balanced by workload. \
+An explicit robot on a new batch owns and locks its newly generated facility \
+open/moves/close workflow. Merge the relevant returned actions into current_plan. When adding \
 a move to an existing destination session, place it inside that session and \
 reuse the existing session open/close; do not duplicate open/close. If a \
 session close was manually deleted, keep it deleted unless the latest request \
@@ -85,10 +88,11 @@ its symbolic handle, resolved later outside this loop. Never hand-write \
 `place_at_pin` when calling `propose_plan` -- it must come from `set_place_pin`.
 
 Reassigning robots:
-8. Explicit user robot intent overrides workload balancing. When the user asks \
-to move a task or object to a specific robot, call `reassign` with the exact \
-affected action id(s). Only include open/close and other moves when the user asks \
-to reassign the whole destination workflow. Replace current_plan with the \
+8. Explicit user robot intent overrides workload balancing. For NEW moves, pass \
+the robot directly to `augment`; this lets it assign the same robot to the new \
+facility open/moves/close workflow. For actions already in current_plan, call \
+`reassign` with the exact affected action id(s). Only include existing open/close \
+and other moves when the user asks to reassign the whole destination workflow. Replace current_plan with the \
 returned action order: ids stay stable, but the server may move the reassigned \
 actions to prevent robot/shared-facility dependency cycles. A robot value can only come \
 from `augment` or `reassign` — `propose_plan` has no field to set it.
@@ -131,8 +135,8 @@ and use ordinary precedence rather than silently reassigning either action.
 8c. A referenced plan task is also the default robot context for a new task \
 inserted relative to it. If the latest request does not explicitly name a \
 robot, resolve the referenced action through `current_plan` and inherit its \
-current `robot`. After `augment`, call `reassign` on the newly added action if \
-needed, then call `revise_order` to place it immediately before or after the referenced \
+current `robot`. Pass that inherited robot directly to `augment`, then call \
+`revise_order` to place the new action immediately before or after the referenced \
 anchor. Never reassign the referenced anchor merely because it supplied this \
 default. An explicit robot in the latest request always overrides the inherited \
 default.
@@ -143,8 +147,9 @@ anchor's robot. If the references span robots and no single insertion anchor is 
 identified, do not guess a robot from reference order; keep `augment`'s \
 workload-based assignment.
 8e. Robot inheritance applies to the requested new task and to any new \
-open/close actions that `augment` created exclusively for its new destination \
-session. Reassign those newly created supporting actions with the task. Never \
+open/close actions that `augment` created exclusively for its new source or \
+destination session; passing the inherited robot to `augment` applies this \
+atomically. Never \
 reassign an already-existing shared open/close action or another existing move \
 unless the latest request explicitly asks to reassign that whole workflow.
 

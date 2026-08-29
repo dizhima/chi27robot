@@ -3796,12 +3796,14 @@ def _apply_track_last_frame(rig, q, track):
 
 
 def _track_base_trace(rig, track):
-    """Every recorded base keyframe as ``[relative_time, world_x, world_y]``.
+    """Every recorded chassis keyframe as ``[relative_time, world_x, world_y]``.
 
     Base translation joints are affine under a fixed robot mount, so derive the
     world-space basis once and transform all frames without an mj_forward call
-    per frame. The trace stays internal to compile/conflict detection; it is not
-    serialized to the frontend or exposed to the conflict-resolution LLM.
+    per frame.  Conflict clearance is a physical-base contract, so this must
+    trace the yaw-joint anchor (``chassis_xy``), not the offset arm-mount origin
+    (``base_xy``). The trace stays internal to compile/conflict detection; it is
+    not serialized to the frontend or exposed to the conflict-resolution LLM.
     """
     robot = rig.robot
     channels = track.get("channels") or {}
@@ -3811,17 +3813,17 @@ def _track_base_trace(rig, track):
     if not fwd or not side or len(fwd) != len(side) or len(fwd) != len(times):
         return None
 
-    basis = getattr(rig, "_conflict_base_xy_basis", None)
+    basis = getattr(rig, "_conflict_chassis_xy_basis", None)
     if basis is None:
         q = rig.model.qpos0.copy()
         q[rig.FWD] = q[rig.SIDE] = q[rig.YAW] = 0.0
-        origin = np.asarray(rig.base_xy(q), dtype=float)
+        origin = np.asarray(rig.chassis_xy(q), dtype=float)
         q[rig.FWD] = 1.0
-        forward = np.asarray(rig.base_xy(q), dtype=float) - origin
+        forward = np.asarray(rig.chassis_xy(q), dtype=float) - origin
         q[rig.FWD], q[rig.SIDE] = 0.0, 1.0
-        lateral = np.asarray(rig.base_xy(q), dtype=float) - origin
+        lateral = np.asarray(rig.chassis_xy(q), dtype=float) - origin
         basis = (origin, forward, lateral)
-        rig._conflict_base_xy_basis = basis
+        rig._conflict_chassis_xy_basis = basis
     origin, forward, lateral = basis
 
     return [
@@ -6823,7 +6825,11 @@ def compile_plan_v2(
     anchors = []
     rest_points = {}
     for robot, rig in rigs.items():
-        xy = [float(value) for value in rig.base_xy(rig.model.qpos0)]
+        # Anonymous navigate steps (including go_to_rest) interpret their
+        # explicit standoff as a chassis/yaw-pivot coordinate. Store and
+        # reserve the same physical point here; using base_xy would shift an
+        # Omron by the arm-mount offset when it "returns" home.
+        xy = [float(value) for value in rig.chassis_xy(rig.model.qpos0)]
         rest_points[robot] = [round(value, 3) for value in xy]
         anchor_id = f"__compiler_v2_initial__{robot}"
         anchors.append({
@@ -8088,10 +8094,12 @@ def compile_plan(
     for it in items:
         completed.setdefault(it["robot"], []).append(it["completed_step"])
     conflicts = detect_conflicts(items)
-    # A robot's initial pose doubles as its rest point (insert_go_to target,
-    # design doc §3c) — read straight off qpos0, no extra simulation needed.
+    # A robot's initial physical chassis pose doubles as its rest point
+    # (insert_go_to target, design doc §3c). Anonymous navigation interprets
+    # explicit standoffs in this frame, not in the offset arm-mount frame.
     rest_points = {
-        robot_name: [round(float(v), 3) for v in rig.base_xy(rig.model.qpos0)]
+        robot_name: [
+            round(float(v), 3) for v in rig.chassis_xy(rig.model.qpos0)]
         for robot_name, rig in rigs.items()
     }
     return {

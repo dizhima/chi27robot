@@ -10,7 +10,12 @@ from __future__ import annotations
 import json
 
 from mujoco_skills.orchestrator.conflict_payload import REPLAN_PATH_ENABLED
-from mujoco_skills.orchestrator.schema import Message, ToolSpec
+from mujoco_skills.orchestrator.schema import (
+    DEFAULT_ROBOT_IDS,
+    Message,
+    ToolSpec,
+    schema_for_robot_ids,
+)
 
 
 SYSTEM_PROMPT = """You are a bounded multi-robot scheduling repair strategist.
@@ -63,7 +68,7 @@ RESOLVER_TOOLS = [
             "properties": {
                 "conflict_id": {"type": "string"},
                 "close_step": {"type": "string"},
-                "to_robot": {"type": "string", "enum": ["robot0", "robot1"]},
+                "to_robot": {"type": "string"},
             },
             "required": ["conflict_id", "close_step", "to_robot"],
             "additionalProperties": False,
@@ -132,7 +137,7 @@ RESOLVER_TOOLS = [
             "type": "object",
             "properties": {
                 "conflict_id": {"type": "string"},
-                "robot": {"type": "string", "enum": ["robot0", "robot1"]},
+                "robot": {"type": "string"},
             },
             "required": ["conflict_id", "robot"],
             "additionalProperties": False,
@@ -146,7 +151,19 @@ if not REPLAN_PATH_ENABLED:
     ]
 
 
-def propose_repairs(payload: dict, provider) -> list[dict]:
+def resolver_tools(robot_ids=DEFAULT_ROBOT_IDS) -> list[ToolSpec]:
+    """Return repair tool schemas bound to the active scene robots."""
+    return [
+        ToolSpec(
+            name=tool.name,
+            description=tool.description,
+            parameters=schema_for_robot_ids(tool.parameters, tuple(robot_ids)),
+        )
+        for tool in RESOLVER_TOOLS
+    ]
+
+
+def propose_repairs(payload: dict, provider, *, robot_ids=DEFAULT_ROBOT_IDS) -> list[dict]:
     """Make one stateless LLM decision for a compiler-produced round."""
     reply = provider.chat(
         [
@@ -157,7 +174,7 @@ def propose_repairs(payload: dict, provider) -> list[dict]:
                 + json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
             ),
         ],
-        RESOLVER_TOOLS,
+        resolver_tools(robot_ids),
     )
     calls = []
     for call in reply.tool_calls or []:

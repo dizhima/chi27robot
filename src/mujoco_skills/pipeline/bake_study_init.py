@@ -3,7 +3,7 @@ r"""(Re)bake the `study_init` keyframe for a study scene.
 The keyframe is the scene's canonical initial session state, applied by the
 frontend on load and reset to at the start of skill playback. It captures:
 
-* a consistent arm "ready" pose for BOTH robots — arm(7) + torso + gripper taken
+* a consistent arm "ready" pose for every discovered robot — arm(7) + torso + gripper taken
   from a reference demo's first frame (default robot0/OpenFridge), so the
   initial view and every skill's start pose agree. The ready pose excludes the
   mobile base, so it is reproducible at any base location;
@@ -11,6 +11,8 @@ frontend on load and reset to at the start of skill playback. It captures:
   the named track's fixture joints are set to its frame-0 values. This is the
   workaround for a fixture that has a Close demo but no Open demo (used by
   layout042's upper cabinet).
+* optionally, explicit fixture joint values (`--init-joint JOINT=VALUE`) for a
+  scene-design preview before the corresponding canonical Close track exists.
 
 Run (042 legacy behaviour):
     uv run --with mujoco==3.10.0 python -m mujoco_skills.pipeline.bake_study_init \
@@ -31,6 +33,8 @@ from pathlib import Path
 
 import numpy as np
 import mujoco
+
+from mujoco_skills.model_signature import robot_mounts
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_SCENE = ROOT / "frontend/public/assets/robocasa/layout042_study.xml"
@@ -65,6 +69,11 @@ def main():
              "in (sets a fixture open when it lacks an Open demo); repeatable",
     )
     parser.add_argument(
+        "--init-joint", action="append", default=[], metavar="JOINT=VALUE",
+        help="explicit fixture joint value to bake; repeatable. Use for a "
+             "preview only when no canonical Close track exists yet.",
+    )
+    parser.add_argument(
         "--no-mjb", action="store_true",
         help="skip recompiling the sibling .mjb after baking the XML",
     )
@@ -82,7 +91,28 @@ def main():
             q[qadr(model, jn)] = tr["channels"][jn][0][0]
             print(f"init-open: {jn} = {tr['channels'][jn][0][0]:.3f} (from {spec} frame 0)")
 
-    # --- ready arm pose (frame 0 of the reference demo), applied to BOTH --
+    for spec in args.init_joint:
+        try:
+            joint_name, value_text = spec.rsplit("=", 1)
+            value = float(value_text)
+        except ValueError as error:
+            parser.error(f"invalid --init-joint {spec!r}; expected JOINT=VALUE")
+        joint_id = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_JOINT, joint_name
+        )
+        if joint_id < 0:
+            parser.error(f"unknown --init-joint name: {joint_name}")
+        if not bool(model.jnt_limited[joint_id]):
+            parser.error(f"--init-joint must be limited: {joint_name}")
+        low, high = (float(v) for v in model.jnt_range[joint_id])
+        if not low <= value <= high:
+            parser.error(
+                f"--init-joint {joint_name}={value} is outside [{low}, {high}]"
+            )
+        q[int(model.jnt_qposadr[joint_id])] = value
+        print(f"init-joint: {joint_name} = {value:.3f} (explicit)")
+
+    # --- ready arm pose (frame 0 of the reference demo), applied to every robot --
     ready_robot, ready_skill = args.ready_from.split("/", 1)
     of = frame0(tracks / ready_robot / f"{ready_skill}.track.json")
     ready_idx = ready_robot.replace("robot", "")
@@ -90,11 +120,19 @@ def main():
     ready_torso = of[f"mobilebase{ready_idx}_{TORSO_SUFFIX}"][0]
     # gripper fully open (range extremes) so ready always shows an open gripper,
     # matching the pick/place generators' open state.
-    r1 = model.jnt_range[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "gripper0_right_finger_joint1")]
-    r2 = model.jnt_range[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "gripper0_right_finger_joint2")]
+    r1 = model.jnt_range[mujoco.mj_name2id(
+        model, mujoco.mjtObj.mjOBJ_JOINT,
+        f"gripper{ready_idx}_right_finger_joint1")]
+    r2 = model.jnt_range[mujoco.mj_name2id(
+        model, mujoco.mjtObj.mjOBJ_JOINT,
+        f"gripper{ready_idx}_right_finger_joint2")]
     ready_fingers = [float(r1[1]), float(r2[0])]
 
-    for r in (0, 1):
+    robot_indices = sorted(
+        int(name.removeprefix("robot").removesuffix("_base"))
+        for name in robot_mounts(model)
+    )
+    for r in robot_indices:
         for s, val in zip(ARM_SUFFIXES, ready_arm):
             q[qadr(model, f"robot{r}_{s}")] = val
         q[qadr(model, f"mobilebase{r}_{TORSO_SUFFIX}")] = ready_torso
@@ -121,7 +159,7 @@ def main():
     print(f"baked study_init (nkey={m2.nkey}, name={mujoco.mj_id2name(m2, mujoco.mjtObj.mjOBJ_KEY, 0)})")
     print("ready arm (7):", [round(v, 4) for v in ready_arm])
     print("ready torso:", round(float(ready_torso), 4), " fingers:", [round(v, 4) for v in ready_fingers])
-    for r in (0, 1):
+    for r in robot_indices:
         got = [float(key[qadr(m2, f"robot{r}_{s}")]) for s in ARM_SUFFIXES]
         match = np.allclose(got, ready_arm, atol=1e-5)
         print(f"  robot{r} arm in keyframe == ready: {match}  {[round(v, 4) for v in got]}")

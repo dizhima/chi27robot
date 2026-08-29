@@ -42,7 +42,7 @@
                     "type": "object",
                     "properties": {
                       "task": { "type": "string", "description": "Human-readable label, e.g. 'move mug_1 to sink'." },
-                      "robot": { "type": "string", "enum": ["robot0", "robot1"] },
+                      "robot": { "type": "string" },
                       "steps": {
                         "type": "array",
                         "items": {

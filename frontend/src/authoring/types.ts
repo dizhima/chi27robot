@@ -45,6 +45,10 @@ export type SceneManifestStandoff = {
 };
 
 export type SceneManifest = {
+  robots?: Record<string, {
+    index?: number;
+    type?: string;
+  }>;
   objects: Record<string, {
     body?: string | number;
     label?: string;

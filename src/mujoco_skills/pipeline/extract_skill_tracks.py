@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -439,7 +440,7 @@ def main() -> None:
         "--input-dir",
         type=Path,
         required=True,
-        help="directory containing robot0/ robot1/ subfolders of raw dumps",
+        help="directory containing robotN/ subfolders of raw dumps",
     )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument(
@@ -470,7 +471,7 @@ def main() -> None:
     extracted: dict[tuple[str, str], dict] = {}
     for robot_dir in sorted(p for p in args.input_dir.iterdir() if p.is_dir()):
         robot = robot_dir.name
-        if robot not in ("robot0", "robot1"):
+        if re.fullmatch(r"robot\d+", robot) is None:
             continue
         for raw_path in sorted(robot_dir.glob("*.json")):
             skill = raw_path.stem.replace(f"{args.scene.stem}_", "")

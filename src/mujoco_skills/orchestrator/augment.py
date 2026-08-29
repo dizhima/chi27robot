@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from mujoco_skills.orchestrator.schema import AugmentedAction, SemanticTask
+from mujoco_skills.orchestrator.schema import (
+    AugmentedAction,
+    SemanticTask,
+    robot_ids_from_manifest,
+)
 
 
 # Estimated semantic work for deterministic authoring-time allocation. A move
@@ -30,12 +34,11 @@ def augment(
     produce the same AugmentedAction list.
 
     `existing` is the current plan's actions (this turn's untouched work).
-    Individual moves are assigned to the least-loaded robot using estimated
-    semantic work, so one destination may be served by both robots. A destination
-    is a synchronization domain, not an ownership boundary: open follows its
-    first new move and close follows its last new move. Within that destination,
-    moves whose objects start in the same articulated home facility share one
-    source open..close session as well.
+    New moves that share a source or destination form an affinity group. The
+    group prefers one owner, while unrelated groups are assigned to the
+    least-loaded robot using estimated semantic work. An explicit robot on any
+    intent owns and locks the whole compatible group, including newly generated
+    source/destination open and close actions.
 
     If the destination already exists in the plan, only new moves are returned.
     Existing open/close actions are reused, and a manually deleted close is not
@@ -45,7 +48,9 @@ def augment(
         return []
 
     current = existing or []
-    load = {"robot0": 0.0, "robot1": 0.0}
+    robot_ids = robot_ids_from_manifest(manifest)
+    load = {robot_id: 0.0 for robot_id in robot_ids}
+    robot_order = {robot_id: index for index, robot_id in enumerate(robot_ids)}
     for action in current:
         if action.robot in load:
             load[action.robot] += _WORK.get(action.op, 1.0)
@@ -62,11 +67,17 @@ def augment(
             raise ValueError(f"duplicate or empty semantic intent id {action.id!r}")
         if action.object not in objects:
             raise ValueError(f"unknown object {action.object!r}")
+        if action.robot is not None and action.robot not in load:
+            raise ValueError(f"invalid robot {action.robot!r}")
         facility = facilities.get(action.dest)
         if not facility or facility.get("place") is None:
             raise ValueError(f"destination {action.dest!r} is not placeable")
         seen_intent_ids.add(action.id)
         by_dest[action.dest].append(action)
+
+    assignment, assignment_locked = _assign_affinity_groups(
+        actions, current, objects, robot_ids, load, robot_order
+    )
 
     result: list[AugmentedAction] = []
     used_action_ids: set[str] = {action.id for action in current}
@@ -87,11 +98,11 @@ def augment(
             action.dest == dest or action.facility == dest
             for action in current
         )
-        assigned_moves: list[tuple[SemanticTask, str]] = []
-        for intent in session:
-            robot = "robot0" if load["robot0"] <= load["robot1"] else "robot1"
-            assigned_moves.append((intent, robot))
-            load[robot] += _WORK["move"]
+        assigned_moves = [(intent, assignment[intent.id]) for intent in session]
+        destination_locked = (
+            len({robot for _, robot in assigned_moves}) == 1
+            and all(assignment_locked[intent.id] for intent, _ in assigned_moves)
+        )
 
         if (not existing_destination
                 and place.get("requires_open") is not None
@@ -107,6 +118,7 @@ def augment(
                     robot=open_robot,
                     op="open",
                     facility=dest,
+                    robot_locked=destination_locked,
                 )
             )
             load[open_robot] += _WORK["open"]
@@ -123,6 +135,10 @@ def augment(
             by_source[None if source == dest else source].append((intent, robot))
 
         for source, source_moves in by_source.items():
+            source_locked = (
+                len({robot for _, robot in source_moves}) == 1
+                and all(assignment_locked[intent.id] for intent, _ in source_moves)
+            )
             source_skills = {}
             source_requires_open = False
             source_initially_open = False
@@ -202,6 +218,7 @@ def augment(
                         robot=open_robot,
                         op="open",
                         facility=source,
+                        robot_locked=source_locked,
                     )
                 )
                 generated_source_open_ids[source] = source_open_id
@@ -218,6 +235,7 @@ def augment(
                         object=intent.object,
                         dest=intent.dest,
                         serves=intent.id,
+                        robot_locked=assignment_locked[intent.id],
                         # List order only serializes one robot's work. An
                         # explicit semantic edge is required when another
                         # robot performs a pick from the same opened source.
@@ -234,10 +252,12 @@ def augment(
                         "anchor": source_moves[0][0].id,
                         "move_ids": [],
                         "robot": source_moves[-1][1],
+                        "locked": source_locked,
                     },
                 )
                 pending["move_ids"].extend(source_move_ids)
                 pending["robot"] = source_moves[-1][1]
+                pending["locked"] = pending["locked"] and source_locked
 
         if not existing_destination and skills.get("close"):
             close_robot = assigned_moves[-1][1]
@@ -247,6 +267,7 @@ def augment(
                     robot=close_robot,
                     op="close",
                     facility=dest,
+                    robot_locked=destination_locked,
                 )
             )
             load[close_robot] += _WORK["close"]
@@ -261,6 +282,7 @@ def augment(
                 robot=close_robot,
                 op="close",
                 facility=source,
+                robot_locked=pending["locked"],
                 # Keep the source open until every shared transfer has
                 # completed, including moves assigned to another robot or
                 # headed to a different destination.
@@ -270,6 +292,105 @@ def augment(
         load[close_robot] += _WORK["close"]
 
     return result
+
+
+def _assign_affinity_groups(
+    intents: list[SemanticTask],
+    existing: list[AugmentedAction],
+    objects: dict,
+    robot_ids: tuple[str, ...],
+    load: dict[str, float],
+    robot_order: dict[str, int],
+) -> tuple[dict[str, str], dict[str, bool]]:
+    """Assign connected source/destination groups with stable ownership."""
+    parents = list(range(len(intents)))
+
+    def find(index: int) -> int:
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        left_root, right_root = find(left), find(right)
+        if left_root != right_root:
+            parents[right_root] = left_root
+
+    first_for_key: dict[tuple[str, str], int] = {}
+    intent_keys: list[set[tuple[str, str]]] = []
+    for index, intent in enumerate(intents):
+        keys = {("dest", intent.dest)}
+        source = objects[intent.object].get("home_facility")
+        if source:
+            keys.add(("source", source))
+        intent_keys.append(keys)
+        for key in keys:
+            if key in first_for_key:
+                union(first_for_key[key], index)
+            else:
+                first_for_key[key] = index
+
+    components: dict[int, list[int]] = defaultdict(list)
+    for index in range(len(intents)):
+        components[find(index)].append(index)
+
+    existing_owners: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for action in existing:
+        if action.op != "move" or action.robot not in load:
+            continue
+        if action.dest:
+            existing_owners[("dest", action.dest)].append(action.robot)
+        descriptor = objects.get(action.object or "", {})
+        source = descriptor.get("home_facility")
+        if source:
+            existing_owners[("source", source)].append(action.robot)
+
+    assigned: dict[str, str] = {}
+    locked: dict[str, bool] = {}
+    for indices in components.values():
+        explicit = [
+            intents[index].robot
+            for index in indices
+            if intents[index].robot is not None
+        ]
+        explicit_set = set(explicit)
+        keys = set().union(*(intent_keys[index] for index in indices))
+
+        if len(explicit_set) == 1:
+            owner = explicit[0]
+            lock_group = True
+        else:
+            candidates = [
+                robot
+                for key in keys
+                for robot in existing_owners.get(key, [])
+            ]
+            if candidates:
+                counts = {robot: candidates.count(robot) for robot in robot_ids}
+                owner = min(
+                    robot_ids,
+                    key=lambda robot: (-counts[robot], load[robot], robot_order[robot]),
+                )
+            elif explicit:
+                counts = {robot: explicit.count(robot) for robot in robot_ids}
+                owner = min(
+                    robot_ids,
+                    key=lambda robot: (-counts[robot], load[robot], robot_order[robot]),
+                )
+            else:
+                owner = min(robot_ids, key=lambda robot: (load[robot], robot_order[robot]))
+            lock_group = False
+
+        for index in indices:
+            intent = intents[index]
+            robot = intent.robot or owner
+            assigned[intent.id] = robot
+            # One unambiguous explicit owner expresses ownership of the whole
+            # affinity group, not merely the individual move carrying the field.
+            locked[intent.id] = lock_group or intent.robot is not None
+            load[robot] += _WORK["move"]
+
+    return assigned, locked
 
 
 def _unique_id(base: str, used: set[str]) -> str:

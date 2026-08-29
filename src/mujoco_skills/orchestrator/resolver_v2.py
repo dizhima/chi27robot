@@ -6,7 +6,7 @@ import copy
 import json
 
 from mujoco_skills.orchestrator.conflict_payload import build_round_payload
-from mujoco_skills.orchestrator.conflict_resolver import RESOLVER_TOOLS
+from mujoco_skills.orchestrator.conflict_resolver import resolver_tools
 from mujoco_skills.orchestrator.conflict_tools import (
     ToolError,
     analyze_spatial_deadlock,
@@ -35,6 +35,7 @@ from mujoco_skills.orchestrator.resolver_state import (
     step_index,
     step_structure,
 )
+from mujoco_skills.orchestrator.schema import DEFAULT_ROBOT_IDS
 from mujoco_skills.orchestrator.schema import Message, ToolCall
 
 
@@ -64,10 +65,12 @@ class ScriptedProposer:
     def __init__(self, rounds):
         self.rounds = list(rounds)
         self.requests = []
+        self.tool_requests = []
         self.index = 0
 
     def chat(self, messages, tools):
         self.requests.append(copy.deepcopy(messages))
+        self.tool_requests.append(copy.deepcopy(tools))
         calls = self.rounds[self.index] if self.index < len(self.rounds) else []
         self.index += 1
         return Message(
@@ -943,7 +946,8 @@ def run_resolution_v2(plan, compile_fn, provider, *, initial_compile_result=None
                       return_compile_result=False,
                       on_event=None,
                       protected=None,
-                      topology_check_fn=None):
+                      topology_check_fn=None,
+                      robot_ids=DEFAULT_ROBOT_IDS):
     """Resolve from the last verified plan; every executed candidate compiles.
 
     ``on_event`` is an optional ``(kind: str, data: dict) -> None`` sink for
@@ -983,6 +987,7 @@ def run_resolution_v2(plan, compile_fn, provider, *, initial_compile_result=None
     )
     state.rebuild_queue()
     emit("run_started", queued_conflicts=len(state.queue))
+    tools = resolver_tools(robot_ids)
 
     llm_round_cap = max(global_attempt_cap * 3, 18)
     while state.queue and state.attempts_used < global_attempt_cap \
@@ -1065,7 +1070,7 @@ def run_resolution_v2(plan, compile_fn, provider, *, initial_compile_result=None
             "Resolve only this chronological focus:\n"
             + json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
         ))
-        reply = provider.chat(state.messages, RESOLVER_TOOLS)
+        reply = provider.chat(state.messages, tools)
         state.messages.append(reply)
         calls = [_normalize_call(call) for call in reply.tool_calls or []]
 

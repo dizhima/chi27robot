@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentRef,
+  type RefObject,
+} from "react";
 import { Link } from "react-router-dom";
 import { OrbitControls } from "@react-three/drei";
 import {
@@ -6,6 +13,7 @@ import {
   MujocoCanvas,
   MujocoProvider,
   TrajectoryPlayer,
+  useBeforePhysicsStep,
 } from "mujoco-react";
 import type {
   MujocoSimAPI,
@@ -52,8 +60,8 @@ import {
   type SceneSession,
 } from "./mujocoBootstrap";
 import { resetCameraToScenePresentation, scenePresentationFor } from "./scenePresentation";
+import { robotIdsFromManifest } from "./robotRegistry";
 
-const TIMELINE_ROBOTS = ["robot0", "robot1"] as const;
 const COMPILE_PLAN_OPTIONS = [
   { id: "sample", label: "Sample plan", plan: SAMPLE_PLAN },
   { id: "drawer", label: "Drawer plan", plan: SAMPLE_PLAN_DRAWER },
@@ -111,6 +119,38 @@ type CameraExportPayload = {
   };
 };
 
+/**
+ * Keep torque-controlled Panda arms and torso columns at their current pose
+ * while leaving free objects under normal gravity for DragInteraction.
+ */
+function DebugRobotGravityCompensation({
+  apiRef,
+}: {
+  apiRef: RefObject<MujocoSimAPI | null>;
+}) {
+  const compensatedDofsRef = useRef<number[]>([]);
+
+  useBeforePhysicsStep(({ data }) => {
+    if (compensatedDofsRef.current.length === 0) {
+      const api = apiRef.current;
+      if (!api) return;
+      compensatedDofsRef.current = api
+        .getJoints()
+        .filter(
+          ({ name }) =>
+            /^robot\d+_joint[1-7]$/.test(name) ||
+            /^mobilebase\d+_joint_torso_height$/.test(name),
+        )
+        .map(({ dofAdr }) => dofAdr);
+    }
+    for (const dof of compensatedDofsRef.current) {
+      data.qfrc_applied[dof] += data.qfrc_bias[dof];
+    }
+  });
+
+  return null;
+}
+
 export default function DebugApp() {
   const [status, setStatus] = useState("loading");
   const [error, setError] = useState<string | null>(null);
@@ -125,9 +165,12 @@ export default function DebugApp() {
   const [sceneInput, setSceneInput] = useState(defaultScenePath);
   const [sceneStatus, setSceneStatus] = useState("Select or type a scene");
   const [sceneConfirmed, setSceneConfirmed] = useState(false);
+  const [sceneLoadRevision, setSceneLoadRevision] = useState(0);
+  const [livePhysics, setLivePhysics] = useState(true);
   const [selectedBodyId, setSelectedBodyId] = useState<number | null>(null);
   const [selectedBodyName, setSelectedBodyName] = useState<string | null>(null);
   const [manifest, setManifest] = useState<SceneManifest | null>(null);
+  const timelineRobots = useMemo(() => robotIdsFromManifest(manifest), [manifest]);
   const bodyIndex = useMemo(
     () => (manifest ? buildBodyIndex(manifest) : new Map()),
     [manifest],
@@ -157,11 +200,8 @@ export default function DebugApp() {
   const [activeSkillTrack, setActiveSkillTrack] = useState<SkillTrack | null>(null);
   const [skillStatus, setSkillStatus] = useState("no skill loaded");
   const [skillPlaying, setSkillPlaying] = useState(false);
-  // Two-robot timeline (multi-track schedule).
-  const [timeline, setTimeline] = useState<Record<string, TimelineSkill[]>>({
-    robot0: [],
-    robot1: [],
-  });
+  // Manifest-driven multi-robot timeline (multi-track schedule).
+  const [timeline, setTimeline] = useState<Record<string, TimelineSkill[]>>({});
   const [schedulePlaying, setSchedulePlaying] = useState(false);
   const [scheduleSpeed, setScheduleSpeed] = useState(1);
   const [scheduleEpoch, setScheduleEpoch] = useState(0);
@@ -284,7 +324,16 @@ export default function DebugApp() {
       });
   };
 
-  // --- two-robot timeline (multi-track schedule) --------------------------
+  useEffect(() => {
+    setTimeline((previous) => Object.fromEntries(
+      timelineRobots.map((robot) => [robot, previous[robot] ?? []]),
+    ));
+    if (timelineRobots.length > 0 && !timelineRobots.includes(selectedRobot)) {
+      setSelectedRobot(timelineRobots[0]);
+    }
+  }, [timelineRobots, selectedRobot]);
+
+  // --- manifest-driven timeline (multi-track schedule) -------------------
   const addToTimeline = (robot: string, skillName: string) => {
     fetchSkillTrack(skillName, robot)
       .then((track) => {
@@ -292,7 +341,7 @@ export default function DebugApp() {
         setTimeline((prev) => ({
           ...prev,
           [robot]: [
-            ...prev[robot],
+            ...(prev[robot] ?? []),
             { key, skill: skillName, track, duration: track.meta.duration },
           ],
         }));
@@ -308,14 +357,14 @@ export default function DebugApp() {
     setSchedulePlaying(false);
     setTimeline((prev) => ({
       ...prev,
-      [robot]: prev[robot].filter((item) => item.key !== key),
+      [robot]: (prev[robot] ?? []).filter((item) => item.key !== key),
     }));
     setScheduleEpoch((e) => e + 1);
   };
 
   const clearTimeline = () => {
     setSchedulePlaying(false);
-    setTimeline({ robot0: [], robot1: [] });
+    setTimeline(Object.fromEntries(timelineRobots.map((robot) => [robot, []])));
     setScheduleEpoch((e) => e + 1);
     const api = apiRef.current;
     if (api?.getKeyframeNames().includes(initialStateKeyframe)) {
@@ -334,9 +383,9 @@ export default function DebugApp() {
   // Flatten the timeline into absolute-start scheduled items (sequential per robot).
   const scheduleItems = useMemo<ScheduledItem[]>(() => {
     const items: ScheduledItem[] = [];
-    for (const robot of TIMELINE_ROBOTS) {
+    for (const robot of timelineRobots) {
       let t = 0;
-      for (const entry of timeline[robot]) {
+      for (const entry of timeline[robot] ?? []) {
         items.push({
           key: entry.key,
           robot,
@@ -349,7 +398,7 @@ export default function DebugApp() {
       }
     }
     return items;
-  }, [timeline]);
+  }, [timeline, timelineRobots]);
 
   // Compiled pipeline items take over the player when present; otherwise the
   // manual timeline drives it (existing debug behaviour).
@@ -360,7 +409,7 @@ export default function DebugApp() {
     setSchedulePlaying(false);
     compileAndLoad(plan)
       .then(({ items, warnings, response }) => {
-        setTimeline({ robot0: [], robot1: [] }); // manual timeline steps aside
+        setTimeline(Object.fromEntries(timelineRobots.map((robot) => [robot, []]))); // manual timeline steps aside
         setActiveSkillTrack(null);
         setTrajectory([]);
         setCompiledItems(items);
@@ -637,6 +686,8 @@ export default function DebugApp() {
         setSelectedBodyId(null);
         setSelectedBodyName(null);
         setSceneConfirmed(true);
+        setLivePhysics(true);
+        setSceneLoadRevision((revision) => revision + 1);
       })
       .catch((err) => {
         setSceneStatus(err instanceof Error ? err.message : String(err));
@@ -647,6 +698,22 @@ export default function DebugApp() {
     setStatus("error");
     setError(err.message || String(err));
     console.error("[mujoco-react viewer]", err);
+  };
+
+  const applyDebugInitialState = (api = apiRef.current) => {
+    if (!api) return;
+    api.reset();
+    if (api.getKeyframeNames().includes(initialStateKeyframe)) {
+      api.applyKeyframe(initialStateKeyframe);
+    }
+  };
+
+  const reloadDebugScene = () => {
+    setLivePhysics(true);
+    apiRef.current = null;
+    setStatus("loading");
+    setError(null);
+    setSceneLoadRevision((revision) => revision + 1);
   };
 
   if (!sceneConfirmed) {
@@ -705,21 +772,20 @@ export default function DebugApp() {
       <div className="app-shell">
         <main className="viewer-pane">
           <MujocoCanvas
-            key={`${sceneConfig.src}${sceneConfig.sceneFile}`}
+            key={`${sceneConfig.src}${sceneConfig.sceneFile}:${sceneLoadRevision}`}
             config={sceneConfig}
             camera={scenePresentation.camera}
-            // Pause physics during kinematic playback (single skill or the
-            // multi-track schedule) so the sim can't fight the qpos writes.
-            paused={activeSkillTrack !== null || scheduleForPlayer.length > 0}
+            // Live physics stays available for Ctrl/Cmd+drag. Robot-only
+            // gravity compensation below prevents the torque-controlled arms
+            // from sagging without making free objects float.
+            paused={!livePhysics || activeSkillTrack !== null || scheduleForPlayer.length > 0}
             onReady={({ api }) => {
               apiRef.current = api;
               setStatus("ready");
               setError(null);
               // Apply the scene's initial session state (cabinet left open,
               // etc.) when declared; scenes without this keyframe are untouched.
-              if (api.getKeyframeNames().includes(initialStateKeyframe)) {
-                api.applyKeyframe(initialStateKeyframe);
-              }
+              applyDebugInitialState(api);
             }}
             onError={handleError}
             onSelection={({ bodyId, name }) => {
@@ -734,6 +800,7 @@ export default function DebugApp() {
             style={{ width: "100%", height: "100%" }}
           >
             <SelectionHighlight bodyId={selectedBodyId} />
+            <DebugRobotGravityCompensation apiRef={apiRef} />
             <ScenePickController
               bodyIndex={bodyIndex}
               enabled={pinMode}
@@ -831,6 +898,28 @@ export default function DebugApp() {
                 </div>
               ) : null}
               <div className="camera-export-row">
+                <button type="button" onClick={reloadDebugScene} disabled={status === "loading"}>
+                  Reload Scene
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={livePhysics}
+                  className={livePhysics ? "is-active" : ""}
+                  onClick={() => setLivePhysics((enabled) => !enabled)}
+                  disabled={status !== "ready"}
+                >
+                  {livePhysics ? "Pause Physics" : "Run Physics"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLivePhysics(true);
+                    applyDebugInitialState();
+                  }}
+                  disabled={status !== "ready"}
+                >
+                  Reset Initial State
+                </button>
                 <button type="button" onClick={exportCurrentCamera} disabled={status !== "ready"}>
                   Export Camera JSON
                 </button>
@@ -937,8 +1026,9 @@ export default function DebugApp() {
                 value={selectedRobot}
                 onChange={(event) => setSelectedRobot(event.target.value)}
               >
-                <option value="robot0">robot0</option>
-                <option value="robot1">robot1</option>
+                {timelineRobots.map((robot) => (
+                  <option key={robot} value={robot}>{robot}</option>
+                ))}
               </select>
               <select
                 value={activeSkillTrack?.meta.skill ?? ""}
@@ -1081,14 +1171,14 @@ export default function DebugApp() {
                   {scheduleTime.t.toFixed(1)} / {scheduleTime.total.toFixed(1)}s
                 </span>
               </div>
-              {TIMELINE_ROBOTS.map((robot) => {
+              {timelineRobots.map((robot) => {
                 let acc = 0;
                 const pxPerSec = 22;
                 return (
                   <div key={robot} className="timeline-row">
                     <span className="timeline-label">{robot}</span>
                     <div className="timeline-lane">
-                      {timeline[robot].map((item) => {
+                      {(timeline[robot] ?? []).map((item) => {
                         const left = acc * pxPerSec;
                         const width = Math.max(item.duration * pxPerSec, 40);
                         acc += item.duration;
