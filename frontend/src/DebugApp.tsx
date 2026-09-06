@@ -32,6 +32,7 @@ import {
   SAMPLE_PLAN_FRIDGE,
   SAMPLE_PLAN_FRIDGE_PREPLACE,
   SAMPLE_PLAN_FRIDGE_TWO_ROBOT,
+  SAMPLE_PLAN_HETER_APPLE_FRIDGE,
   SAMPLE_PLAN_HORIZONTAL_PICK,
 } from "./plan/samplePlan";
 import type { AuthoredPlan, CompileResponse } from "./plan/planTypes";
@@ -76,6 +77,11 @@ const COMPILE_PLAN_OPTIONS = [
     id: "fridge-two-robot",
     label: "Two-robot fridge plan",
     plan: SAMPLE_PLAN_FRIDGE_TWO_ROBOT,
+  },
+  {
+    id: "heter-apple-fridge",
+    label: "Heter: Stretch apple to fridge",
+    plan: SAMPLE_PLAN_HETER_APPLE_FRIDGE,
   },
   {
     id: "horizontal-pick",
@@ -197,6 +203,12 @@ export default function DebugApp() {
   const [skills, setSkills] = useState<SkillManifestEntry[]>([]);
   const [skillsBase, setSkillsBase] = useState("");
   const [selectedRobot, setSelectedRobot] = useState("robot0");
+  const skillsForSelectedRobot = useMemo(
+    () => skills.filter((skill) =>
+      skill.robots.includes(selectedRobot) && Boolean(skill.tracks[selectedRobot]),
+    ),
+    [skills, selectedRobot],
+  );
   const [activeSkillTrack, setActiveSkillTrack] = useState<SkillTrack | null>(null);
   const [skillStatus, setSkillStatus] = useState("no skill loaded");
   const [skillPlaying, setSkillPlaying] = useState(false);
@@ -1024,20 +1036,27 @@ export default function DebugApp() {
             <div className="trajectory-controls skill-controls">
               <select
                 value={selectedRobot}
-                onChange={(event) => setSelectedRobot(event.target.value)}
+                onChange={(event) => {
+                  setSelectedRobot(event.target.value);
+                  setActiveSkillTrack(null);
+                  setSkillPlaying(false);
+                  setSkillStatus("select a skill");
+                }}
               >
                 {timelineRobots.map((robot) => (
                   <option key={robot} value={robot}>{robot}</option>
                 ))}
               </select>
               <select
-                value={activeSkillTrack?.meta.skill ?? ""}
+                value={skillsForSelectedRobot.some(
+                  (skill) => skill.name === activeSkillTrack?.meta.skill,
+                ) ? activeSkillTrack?.meta.skill ?? "" : ""}
                 onChange={(event) => {
                   if (event.target.value) loadSkill(event.target.value, selectedRobot);
                 }}
               >
                 <option value="">— select skill —</option>
-                {skills.map((skill) => (
+                {skillsForSelectedRobot.map((skill) => (
                   <option key={skill.name} value={skill.name}>
                     {skill.name}
                     {skill.facility ? ` (${skill.facility})` : ""}

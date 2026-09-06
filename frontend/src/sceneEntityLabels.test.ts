@@ -47,7 +47,13 @@ const bodies = [
 describe("discoverSceneEntityLabelAnchors", () => {
   it("tracks visible objects and puts articulated facilities at their standoffs", () => {
     expect(discoverSceneEntityLabelAnchors(manifest, bodies, true)).toEqual([
-      { kind: "object", name: "mug_1", text: "mug 1", bodyId: 7 },
+      {
+        kind: "object",
+        name: "mug_1",
+        text: "mug 1",
+        bodyId: 7,
+        bodyName: "mug_1_main",
+      },
       {
         kind: "facility",
         name: "fridge",

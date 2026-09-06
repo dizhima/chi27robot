@@ -48,6 +48,10 @@ export type SceneManifest = {
   robots?: Record<string, {
     index?: number;
     type?: string;
+    namespace?: string;
+    root_body?: string;
+    tracking_body?: string;
+    supported_ops?: string[];
   }>;
   objects: Record<string, {
     body?: string | number;

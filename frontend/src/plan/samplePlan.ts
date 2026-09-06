@@ -262,6 +262,72 @@ export const SAMPLE_PLAN_FRIDGE_TWO_ROBOT: AuthoredPlan = {
 };
 
 /**
+ * M3d heterogeneous acceptance workflow for layout024_sorting_heter.
+ *
+ * The logical ids deliberately remain robot0/robot1: morphology comes from
+ * the scene manifest. PandaOmron performs the articulation replay while
+ * Stretch executes its visually accepted navigate/pick/place/reset sequence.
+ * Explicit cross-robot dependencies keep the refrigerator open for the whole
+ * transfer and make this useful as a one-click Debug-page regression.
+ */
+export const SAMPLE_PLAN_HETER_APPLE_FRIDGE: AuthoredPlan = {
+  tasks: [
+    {
+      task: "robot0 opens fridge",
+      robot: "robot0",
+      steps: [
+        { id: "heter_open_nav", op: "navigate", target: "fridge" },
+        { id: "heter_open", op: "OpenFridge" },
+        {
+          id: "heter_open_reset",
+          op: "reset",
+          retreat: 0.0,
+          preserve_yaw: true,
+        },
+      ],
+    },
+    {
+      task: "robot1 moves apple_1 into fridge",
+      robot: "robot1",
+      robot_locked: true,
+      steps: [
+        {
+          id: "heter_nav_apple",
+          op: "navigate",
+          target: "apple_1",
+          after: ["heter_open_reset"],
+        },
+        { id: "heter_pick_apple", op: "pick", object: "apple_1" },
+        { id: "heter_nav_fridge", op: "navigate", target: "fridge" },
+        {
+          id: "heter_place_apple",
+          op: "place",
+          object: "apple_1",
+          dest: "fridge",
+        },
+        { id: "heter_reset", op: "reset", retreat: 0.18, preserve_yaw: true },
+      ],
+    },
+    {
+      task: "robot0 closes fridge",
+      robot: "robot0",
+      steps: [
+        {
+          id: "heter_close_reset",
+          op: "reset",
+          retreat: 0.0,
+          preserve_yaw: true,
+          after: ["heter_reset"],
+        },
+        { id: "heter_close_nav", op: "navigate", target: "fridge" },
+        { id: "heter_close", op: "CloseFridge" },
+        { id: "heter_close_reset_final", op: "reset", retreat: 0.18, preserve_yaw: true },
+      ],
+    },
+  ],
+};
+
+/**
  * Focused horizontal-pick visual check. robot1 is intentionally used because
  * its ready pose is closer to condiment_bottle_1 than robot0's.
  */

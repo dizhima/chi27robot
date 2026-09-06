@@ -13,9 +13,12 @@ export const defaultScenePath = "assets/robocasa/layout042_study.xml";
 export const suggestedScenePaths = [
   "assets/robocasa/layout042_sorting.xml",
   "assets/robocasa/layout024_sorting.xml",
+  "assets/robocasa/layout024_sorting_heter.xml",
   "assets/robocasa/layout012_preparing.xml",
   "assets/robocasa/layout034_preparing.xml",
   "assets/robocasa/layout038_preparing.xml",
+  "assets/robocasa/layout038_preparing_heter.xml",
+  "assets/robocasa/layout049_sorting.xml",
 ] as const;
 
 export const defaultSceneConfig: SceneConfig = {

@@ -6,10 +6,12 @@ import { useMujoco } from "mujoco-react";
 import { discoverRobotIdentityAnchors, type RobotIdentityAnchor } from "./robotIdentities";
 import { colorForRobot } from "./robotVisuals";
 import { cappedLabelZoomScale } from "./labelZoom";
+import type { SceneManifest } from "./authoring/types";
 const LABEL_CLEARANCE = 0.28;
 const DISCOVERY_RETRY_SECONDS = 0.5;
 
 type RobotIdentityLabelsProps = {
+  robots?: SceneManifest["robots"];
   pickEnabled?: boolean;
   onLabelPick?: (pick: RobotIdentityLabelPick) => void;
 };
@@ -21,6 +23,7 @@ export type RobotIdentityLabelPick = {
 };
 
 export function RobotIdentityLabels({
+  robots,
   pickEnabled = false,
   onLabelPick,
 }: RobotIdentityLabelsProps) {
@@ -35,7 +38,7 @@ export function RobotIdentityLabels({
 
   const discoverAnchors = () => {
     if (!api) return [];
-    return discoverRobotIdentityAnchors(api.getBodies());
+    return discoverRobotIdentityAnchors(api.getBodies(), robots);
   };
 
   useEffect(() => {
@@ -44,7 +47,7 @@ export function RobotIdentityLabels({
     setAnchors(discoverAnchors());
     // `api` is the stable scene API. A MujocoCanvas remount supplies a new one.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api]);
+  }, [api, robots]);
 
   useFrame(({ camera, clock }) => {
     if (!mujoco.isReady) return;
@@ -52,7 +55,10 @@ export function RobotIdentityLabels({
     const modelChanged = model !== modelRef.current;
     if (modelChanged) {
       modelRef.current = model;
-      const discovered = discoverRobotIdentityAnchors(mujoco.api.getBodies());
+      const discovered = discoverRobotIdentityAnchors(
+        mujoco.api.getBodies(),
+        robots,
+      );
       setAnchors(discovered);
       nextDiscoveryAtRef.current = clock.elapsedTime + DISCOVERY_RETRY_SECONDS;
     } else if (
@@ -61,7 +67,10 @@ export function RobotIdentityLabels({
     ) {
       // Scene loading and WASM/HMR transitions can briefly expose an empty body
       // list. Retry until the active model has published its body metadata.
-      const discovered = discoverRobotIdentityAnchors(mujoco.api.getBodies());
+      const discovered = discoverRobotIdentityAnchors(
+        mujoco.api.getBodies(),
+        robots,
+      );
       if (discovered.length > 0) setAnchors(discovered);
       nextDiscoveryAtRef.current = clock.elapsedTime + DISCOVERY_RETRY_SECONDS;
     }

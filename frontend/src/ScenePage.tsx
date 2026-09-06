@@ -112,10 +112,6 @@ import { robotIdsFromManifest } from "./robotRegistry";
 const PLAN_SUBTITLES_STORAGE_KEY = "mujoco-plan-task-subtitles";
 const SHOW_SCENE_OBJECT_LABELS = import.meta.env.VITE_SHOW_SCENE_OBJECT_LABELS !== "false";
 const EXPLORE_ENABLED = import.meta.env.VITE_ENABLE_EXPLORE !== "false";
-// Temporary UI-only switch: keep Explore implemented/configured, but hide its
-// entry without requiring a Vite restart. If HMR lands while already exploring,
-// the Return to plan action remains visible so the user is never trapped there.
-const TEMP_HIDE_EXPLORE_ENTRY = true;
 const SHOW_READ_ONLY_STANDOFFS = import.meta.env.VITE_SHOW_READ_ONLY_STANDOFFS === "true";
 const CHECKPOINT_SAVE_ENABLED = import.meta.env.VITE_ENABLE_CHECKPOINT_SAVE === "true";
 const CHECKPOINT_LOAD_ENABLED = import.meta.env.VITE_ENABLE_CHECKPOINT_LOAD === "true";
@@ -732,7 +728,7 @@ export default function ScenePage() {
           ? "compiling…"
           : status === "error"
             ? error ?? "compile failed"
-            : `${bars.length} steps`);
+            : undefined);
 
   const exploreAvailable = canEnterExplore({
     hasPlan,
@@ -1105,7 +1101,6 @@ export default function ScenePage() {
       // before returning (S2 rollback rule) — this is only the generic
       // error path.
       finalizeMessage(assistantId, { status: "error", content: outcome.message });
-      setChatError(outcome.message);
     }
   };
 
@@ -1434,7 +1429,9 @@ export default function ScenePage() {
         if (activeTurnRef.current !== turnId) return;
         const msg = err instanceof Error ? err.message : String(err);
         finalizeMessage(assistantId, { status: "error", content: msg });
-        setChatError(msg);
+        // The finalized assistant bubble is the canonical visible failure.
+        // Mirroring the same text into chatError rendered every compile error
+        // twice in the conversation rail.
       })
       .finally(() => {
         if (activeTurnRef.current === turnId) {
@@ -1942,6 +1939,7 @@ export default function ScenePage() {
               <ScenePickController bodyIndex={bodyIndex} enabled={pickMode} onPick={handleScenePick} />
               {planSubtitlesEnabled || pickMode ? (
                 <RobotIdentityLabels
+                  robots={manifest?.robots}
                   pickEnabled={pickMode}
                   onLabelPick={handleRobotLabelPick}
                 />
@@ -2019,7 +2017,7 @@ export default function ScenePage() {
             >
               Reset
             </button>
-            {EXPLORE_ENABLED && (!TEMP_HIDE_EXPLORE_ENTRY || exploreMode) ? (
+            {EXPLORE_ENABLED ? (
               <button
                 type="button"
                 className={`scene-explore-button${exploreMode ? " is-active" : ""}`}
@@ -2296,15 +2294,11 @@ export default function ScenePage() {
                   title="Switch session versions or load a saved checkpoint"
                 >
                   {versionHistory.currentId === null ? <option value="">Select plan…</option> : null}
-                  {versionHistory.versions.length > 0 ? (
-                    <optgroup label="Current session">
-                      {versionHistory.versions.map((version) => (
-                        <option key={version.id} value={version.id}>
-                          {versionDisplayLabel(versionHistory, version)}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ) : null}
+                  {versionHistory.versions.map((version) => (
+                    <option key={version.id} value={version.id}>
+                      {versionDisplayLabel(versionHistory, version)}
+                    </option>
+                  ))}
                   {CHECKPOINT_LOAD_ENABLED && sceneCheckpoints.length > 0 ? (
                     <optgroup label="Saved checkpoints">
                       {sceneCheckpoints.map((checkpoint) => (

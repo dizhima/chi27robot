@@ -39,15 +39,18 @@ it("renders scene launcher on /", () => {
   expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Show preset scene paths" }));
   const options = screen.getAllByRole("option");
-  expect(options).toHaveLength(5);
+  expect(options).toHaveLength(8);
   expect(
     options.map((option) => option.textContent),
   ).toEqual([
     "assets/robocasa/layout042_sorting.xml",
     "assets/robocasa/layout024_sorting.xml",
+    "assets/robocasa/layout024_sorting_heter.xml",
     "assets/robocasa/layout012_preparing.xml",
     "assets/robocasa/layout034_preparing.xml",
     "assets/robocasa/layout038_preparing.xml",
+    "assets/robocasa/layout038_preparing_heter.xml",
+    "assets/robocasa/layout049_sorting.xml",
   ]);
   fireEvent.click(screen.getByRole("option", { name: "assets/robocasa/layout024_sorting.xml" }));
   expect(screen.getByLabelText("Scene path")).toHaveValue(
@@ -65,9 +68,9 @@ it("renders debug launcher on /debug", () => {
   expect(screen.getByRole("heading", { name: "Open Scene (Debug)" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Scene UI" })).toHaveAttribute("href", "/");
   fireEvent.click(screen.getByRole("button", { name: "Show preset scene paths" }));
-  expect(screen.getAllByRole("option")).toHaveLength(5);
-  fireEvent.click(screen.getByRole("option", { name: "assets/robocasa/layout038_preparing.xml" }));
+  expect(screen.getAllByRole("option")).toHaveLength(8);
+  fireEvent.click(screen.getByRole("option", { name: "assets/robocasa/layout038_preparing_heter.xml" }));
   expect(screen.getByLabelText("Scene path (relative to public/)")).toHaveValue(
-    "assets/robocasa/layout038_preparing.xml",
+    "assets/robocasa/layout038_preparing_heter.xml",
   );
 });
