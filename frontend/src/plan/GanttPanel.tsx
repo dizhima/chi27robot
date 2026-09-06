@@ -294,9 +294,7 @@ export function GanttPanel({
       // by target midpoints so every point on the lane resolves to a slot; the
       // caret shows exactly where the task will land.
       let afterActionId: string | null = null;
-      let insertT = candidates.length > 0
-        ? Math.min(...candidates.map((candidate) => candidate.start))
-        : 0;
+      let insertT = 0;
       for (const candidate of candidates) {
         if (cursorT < candidate.start + candidate.duration / 2) break;
         afterActionId = candidate.group!;

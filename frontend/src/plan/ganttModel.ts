@@ -104,10 +104,7 @@ export function projectTaskMoveBars(
 
     if (sourceRobot === edit.robot) {
       targetLane.splice(insertAt, 0, moved);
-      const compiledLane = compiledBars.filter((bar) => bar.robot === edit.robot);
-      let cursor = compiledLane.length > 0
-        ? Math.min(...compiledLane.map((bar) => bar.start))
-        : 0;
+      let cursor = 0;
       for (const bar of targetLane) {
         bar.start = cursor;
         cursor += bar.duration;
@@ -117,9 +114,7 @@ export function projectTaskMoveBars(
 
     const insertStart = anchorIndex >= 0
       ? targetLane[anchorIndex].start + targetLane[anchorIndex].duration
-      : targetLane.length > 0
-        ? Math.min(...targetLane.map((bar) => bar.start))
-        : 0;
+      : 0;
     for (let index = insertAt; index < targetLane.length; index++) {
       targetLane[index].start += moved.duration;
     }

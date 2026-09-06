@@ -301,7 +301,7 @@ describe("GanttPanel timeline ruler", () => {
     const onMoveTask = vi.fn();
     const taskBars: GanttBar[] = [
       { ...bars[0], key: "a0", group: "a", robot: "robot0", start: 0, duration: 10 },
-      { ...bars[0], key: "b0", group: "b", robot: "robot1", start: 0, duration: 10, label: "task b" },
+      { ...bars[0], key: "b0", group: "b", robot: "robot1", start: 20, duration: 10, label: "task b" },
     ];
     const { container } = render(
       <GanttPanel
@@ -325,6 +325,7 @@ describe("GanttPanel timeline ruler", () => {
     // reassignment gesture and must not be dismissed as a click.
     fireEvent.pointerDown(screen.getByRole("button", { name: "task a" }), { clientX: 3, clientY: 10 });
     fireEvent.pointerMove(window, { clientX: 3, clientY: 45 });
+    expect(container.querySelector(".gantt-insert-caret")).toHaveStyle({ left: "0%" });
     fireEvent.pointerUp(window);
 
     expect(onMoveTask).toHaveBeenCalledWith("a", "robot1", null);

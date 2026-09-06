@@ -79,6 +79,22 @@ describe("projectTaskMoveBars", () => {
     expect(result.ghostBars).toEqual([]);
   });
 
+  it("places a new first task at time zero even when the compiled lane began later", () => {
+    const delayed = [
+      bar({ key: "lemon", group: "lemon", robot: "robot1", start: 30, duration: 12 }),
+      bar({ key: "mug", group: "mug", robot: "robot1", start: 42, duration: 8 }),
+    ];
+
+    const result = projectTaskMoveBars(delayed, [
+      { actionId: "mug", sourceRobot: "robot1", robot: "robot1", afterActionId: null },
+    ]);
+
+    expect(result.bars.map((b) => [b.group, b.start])).toEqual([
+      ["mug", 0],
+      ["lemon", 8],
+    ]);
+  });
+
 });
 
 describe("projectTaskAfterBars", () => {
