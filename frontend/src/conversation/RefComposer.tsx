@@ -30,6 +30,7 @@ export type ComposerHandle = {
     kind: "object" | "facility" | "robot" | "position" | "plan_task",
     robot?: string,
   ) => void;
+  updatePlanTaskToken: (refId: string, label: string, robot: string) => void;
   focus: () => void;
   clear: () => void;
   submit: () => void;
@@ -72,6 +73,18 @@ function presentRefIds(root: HTMLElement): string[] {
   return Array.from(root.querySelectorAll<HTMLElement>("[data-ref-id]"))
     .map((el) => el.dataset.refId!)
     .filter(Boolean);
+}
+
+function updatePlanTaskTokenElement(
+  token: HTMLElement,
+  label: string,
+  robot: string,
+) {
+  const colors = ganttColorsForRobot(robot);
+  token.dataset.robot = robot;
+  token.style.setProperty("--robot-bar-background", colors.background);
+  token.style.setProperty("--robot-bar-border", colors.border);
+  token.textContent = `▭ ${label}`;
 }
 
 export const RefComposer = forwardRef<ComposerHandle, RefComposerProps>(function RefComposer(
@@ -127,19 +140,18 @@ export const RefComposer = forwardRef<ComposerHandle, RefComposerProps>(function
         token.contentEditable = "false";
         token.dataset.refId = refId;
         if (kind === "plan_task" && robot) {
-          const colors = ganttColorsForRobot(robot);
-          token.style.setProperty("--robot-bar-background", colors.background);
-          token.style.setProperty("--robot-bar-border", colors.border);
-        }
-        token.textContent = kind === "position"
-          ? `📍 ${label}`
-          : kind === "robot"
-            ? `● ${label}`
-          : kind === "facility"
-            ? `◇ ${label}`
-            : kind === "plan_task"
-              ? `▭ ${label}`
+          updatePlanTaskTokenElement(token, label, robot);
+        } else {
+          token.textContent = kind === "position"
+            ? `📍 ${label}`
+            : kind === "robot"
+              ? `● ${label}`
+            : kind === "facility"
+              ? `◇ ${label}`
+              : kind === "plan_task"
+                ? `▭ ${label}`
               : label;
+        }
 
         const sel = window.getSelection();
         let range = savedRangeRef.current;
@@ -162,6 +174,14 @@ export const RefComposer = forwardRef<ComposerHandle, RefComposerProps>(function
         }
         savedRangeRef.current = range.cloneRange();
         refresh();
+      },
+      updatePlanTaskToken: (refId, label, robot) => {
+        const editor = editorRef.current;
+        if (!editor) return;
+        const token = Array.from(
+          editor.querySelectorAll<HTMLElement>("[data-ref-id]"),
+        ).find((candidate) => candidate.dataset.refId === refId);
+        if (token) updatePlanTaskTokenElement(token, label, robot);
       },
       focus: () => editorRef.current?.focus(),
       clear: () => {

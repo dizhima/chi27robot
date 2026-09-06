@@ -35,6 +35,7 @@ import {
   projectTaskAfterBars,
   projectTaskMoveBars,
   toGanttBars,
+  type GanttBar,
   type TaskAfterProjectionEdit,
 } from "./plan/ganttModel";
 import { previewBars, type PreviewMeta } from "./plan/previewSchedule";
@@ -1242,7 +1243,8 @@ export default function ScenePage() {
   );
 
   const handlePlanReferenceBar = useCallback(
-    (actionId: string | null | undefined) => {
+    (bar: GanttBar) => {
+      const actionId = bar.group;
       if (!actionId) return;
       const action = actionsById.get(actionId);
       // Resolver-created task bars (e.g. go_to_rest) have no semantic action
@@ -1250,14 +1252,51 @@ export default function ScenePage() {
       // AugmentedAction id is safe to send as a semantic plan reference,
       // including open/close/go_to actions.
       if (!action) return;
+      // The displayed bar is the source of truth while an unsynced task move
+      // is being projected; semanticActions still carries the previous robot.
+      const currentAction = { ...action, robot: bar.robot as RobotName };
       const id = crypto.randomUUID();
-      const ref = planTaskRefFromAction(id, action);
+      const ref = planTaskRefFromAction(id, currentAction);
       setPlanRefs((refs) => [...refs, ref]);
-      composerRef.current?.insertToken(id, `${action.robot} · ${ref.label}`, "plan_task", action.robot);
+      composerRef.current?.insertToken(
+        id,
+        `${ref.robot} · ${ref.label}`,
+        "plan_task",
+        ref.robot,
+      );
       composerRef.current?.focus();
     },
     [actionsById],
   );
+
+  // A token can already be present when its task is dragged to another lane.
+  // Keep both its structured ref and imperative contentEditable DOM in sync
+  // with the task's current draft-plan lane.
+  useEffect(() => {
+    if (!draftPlan || planRefs.length === 0) return;
+    const robotByActionId = new Map(
+      draftPlan.tasks.flatMap((task) => task.task
+        ? [[task.task, task.robot] as const]
+        : []),
+    );
+    const updates = planRefs.flatMap((ref) => {
+      const robot = robotByActionId.get(ref.actionId);
+      return robot && robot !== ref.robot ? [{ ref, robot }] : [];
+    });
+    if (updates.length === 0) return;
+    const robotByRefId = new Map(updates.map(({ ref, robot }) => [ref.id, robot]));
+    setPlanRefs((refs) => refs.map((ref) => {
+      const robot = robotByRefId.get(ref.id);
+      return robot ? { ...ref, robot } : ref;
+    }));
+    for (const { ref, robot } of updates) {
+      composerRef.current?.updatePlanTaskToken(
+        ref.id,
+        `${robot} · ${ref.label}`,
+        robot,
+      );
+    }
+  }, [draftPlan, planRefs]);
 
   // Best-effort: clicking a [[ref:NAME]] chip in an assistant message selects
   // the Gantt bar for the task that references it, if one can be found.
@@ -1353,6 +1392,7 @@ export default function ScenePage() {
     composerRef.current?.clear();
     setContextRefs([]);
     setPlanRefs([]);
+    setPickMode(false);
     setPlanRefMode(false);
     setChatError(null);
     setActiveTurnId(turnId);
@@ -2349,7 +2389,7 @@ export default function ScenePage() {
           }}
           onReferenceBar={
             planRefMode && viewMode === "task"
-              ? (bar) => handlePlanReferenceBar(bar.group)
+              ? handlePlanReferenceBar
               : undefined
           }
           onSelectBar={(bar) => setSelectedStepId(bar.key)}
