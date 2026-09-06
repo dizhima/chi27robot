@@ -6,6 +6,11 @@ import json
 from collections.abc import Callable
 from dataclasses import asdict, replace
 
+from mujoco_skills.eligibility import (
+    AssignmentEligibilityError,
+    format_eligibility_rejection,
+    require_semantic_assignments,
+)
 from mujoco_skills.orchestrator import loop
 from mujoco_skills.orchestrator.augment import augment
 from mujoco_skills.orchestrator.prompt import AUTHORING_PROMPT
@@ -271,6 +276,10 @@ def _context(
         name: {
             "label": spec.get("label"),
             "home_facility": spec.get("home_facility"),
+            "pick_reachable_by": (
+                (spec.get("pick") or {}).get("reachable_by")
+                or list(robot_ids_from_manifest(manifest))
+            ),
         }
         for name, spec in manifest.get("objects", {}).items()
     }
@@ -286,6 +295,10 @@ def _context(
                     "kind": place.get("kind", "surface"),
                     "access": place.get("access"),
                     "requires_open": place.get("requires_open"),
+                    "reachable_by": (
+                        place.get("reachable_by")
+                        or list(robot_ids_from_manifest(manifest))
+                    ),
                 }
                 if place is not None
                 else None
@@ -326,12 +339,14 @@ class _AuthoringExecutor:
         # describe a final plan, but cannot use propose_plan to smuggle an
         # arbitrary rewrite around the deterministic mutation tools.
         self.working_actions = list(current_plan)
+        self.initial_actions = list(current_plan)
         self.current_plan = self.working_actions
         self.result: AuthoringResult | None = None
         # Preserved so a loop that never lands a valid propose_plan call can
         # surface the real underlying rejection reason instead of only the
         # unified "authoring loop ended without a valid propose_plan call".
         self.last_propose_error: str | None = None
+        self.last_rejection: dict | None = None
         self.action_by_id = {action.id: action for action in self.working_actions}
         self.plan_refs = plan_refs or []
         # handle -> facility, built from this turn's bindable scene_refs
@@ -357,6 +372,10 @@ class _AuthoringExecutor:
             for action in current_plan
             if getattr(action, "place_at_pin", None)
         }
+        # A revision preserves derived facility-session ownership by default.
+        # Explicit endpoint reassignments opt those actions out of the generic
+        # preservation pass performed when the plan is committed.
+        self.explicitly_reassigned_action_ids: set[str] = set()
 
     def execute(self, name: str, arguments: dict) -> dict:
         try:
@@ -397,6 +416,9 @@ class _AuthoringExecutor:
                     arguments.get("after_action_id"),
                     position_supplied="after_action_id" in arguments,
                 )
+                self.explicitly_reassigned_action_ids.update(
+                    action.id for action in actions
+                )
                 return {"actions": [asdict(action) for action in actions]}
             if name == "revise_order":
                 actions = self._revise_order(arguments.get("operations"))
@@ -427,24 +449,53 @@ class _AuthoringExecutor:
                     raise ValueError("propose_plan requires a non-empty message")
                 reason_value = arguments.get("reason")
                 reason = str(reason_value).strip() if reason_value is not None else None
+                # Once any mutation in this request has been rejected, the
+                # whole authoring turn is atomic: preserve the incoming plan
+                # and return the deterministic English policy explanation.
+                # Do this even if the model mistakenly submits `committed`.
+                if self.last_rejection is not None:
+                    message = format_eligibility_rejection(
+                        self.last_rejection, self.manifest)
+                    reason = message
+                    committed_actions = list(self.initial_actions)
+                    self.result = AuthoringResult(
+                        actions=committed_actions,
+                        message=message,
+                        reason=reason,
+                    )
+                    return {
+                        "actions": [asdict(action) for action in committed_actions],
+                        "message": message,
+                        "reason": reason,
+                        "plan_unchanged": True,
+                    }
                 if status == "committed":
                     if reason:
                         raise ValueError(
                             "propose_plan status=committed requires reason to be null"
                         )
+                    self.working_actions = _preserve_facility_sessions(
+                        self.initial_actions,
+                        self.working_actions,
+                        self.manifest,
+                        skip_action_ids=self.explicitly_reassigned_action_ids,
+                    )
+                    self.current_plan = self.working_actions
+                    self.action_by_id = {
+                        action.id: action for action in self.working_actions
+                    }
                     # Final server-side invariant checks before committing;
                     # never a place to mutate working_actions.
                     _validate_semantic_dependencies(self.working_actions)
                     _validate_same_robot_dependency_order(self.working_actions)
+                    require_semantic_assignments(
+                        self.manifest, self.working_actions)
                     reason = None
                 else:  # ungroundable
                     if not reason:
                         raise ValueError(
                             "propose_plan status=ungroundable requires a non-empty reason"
                         )
-                    # working_actions is left exactly as it was: an
-                    # ungroundable request preserves any pre-existing plan
-                    # instead of discarding it.
                 committed_actions = list(self.working_actions)
                 self.result = AuthoringResult(
                     actions=committed_actions,
@@ -457,6 +508,17 @@ class _AuthoringExecutor:
                     "reason": reason,
                 }
             return {"error": f"unknown authoring tool {name!r}"}
+        except AssignmentEligibilityError as exc:
+            self.last_rejection = dict(exc.decision)
+            message = str(exc)
+            if name == "propose_plan":
+                self.last_propose_error = message
+            return {
+                "error": "assignment_rejected",
+                "message": message,
+                "decision": exc.as_dict(),
+                "plan_unchanged": True,
+            }
         except (KeyError, TypeError, ValueError) as exc:
             message = str(exc)
             if name == "propose_plan":
@@ -561,7 +623,13 @@ class _AuthoringExecutor:
                 continue
             seen_orders.add(order)
             try:
+                require_semantic_assignments(self.manifest, proposed)
                 _validate_reassign_topology(proposed, self.manifest)
+            except AssignmentEligibilityError:
+                # Eligibility does not depend on the candidate's insertion
+                # position. Preserve its structured reason instead of
+                # misreporting it as a topology failure after trying slots.
+                raise
             except ValueError as exc:
                 failure = exc
                 continue
@@ -621,6 +689,23 @@ class _AuthoringExecutor:
             raise ValueError(f"destination {next_dest!r} is not placeable")
 
         destination_changed = next_dest != original.dest
+        original_index = self.working_actions.index(original)
+        old_open_id = next(
+            (
+                action.id for action in reversed(
+                    self.working_actions[:original_index]
+                )
+                if action.op == "open" and action.facility == original.dest
+            ),
+            None,
+        ) if destination_changed else None
+        old_close_id = next(
+            (
+                action.id for action in self.working_actions[original_index + 1:]
+                if action.op == "close" and action.facility == original.dest
+            ),
+            None,
+        ) if destination_changed else None
         updated = replace(
             original,
             object=next_object,
@@ -628,6 +713,11 @@ class _AuthoringExecutor:
             place_at_pin=None if destination_changed else original.place_at_pin,
         )
         if not destination_changed:
+            require_semantic_assignments(
+                self.manifest,
+                [updated if action.id == original.id else action
+                 for action in self.working_actions],
+            )
             self.working_actions = [
                 updated if action.id == original.id else action
                 for action in self.working_actions
@@ -644,19 +734,22 @@ class _AuthoringExecutor:
             raise ValueError(removal["error"])
 
         additions = augment(
-            [SemanticTask(original.id, "move", next_object, next_dest)],
+            [SemanticTask(
+                original.id, "move", next_object, next_dest,
+                original.robot)],
             self.manifest,
             existing=list(temp.working_actions),
         )
         rewritten_additions: list[AugmentedAction] = []
         for action in additions:
             if action.op == "move":
-                rewritten_additions.append(updated)
+                # Keep dependencies derived for the new destination (for
+                # example its new container opener).  The restoration pass
+                # below adds back unrelated authored predecessors while
+                # explicitly discarding the old container-envelope edge.
+                rewritten_additions.append(replace(updated, after=action.after))
             else:
-                # These support actions exist exclusively because this update
-                # created a fresh destination session. Keep that workflow with
-                # the move's existing robot while leaving it user-unlocked.
-                rewritten_additions.append(replace(action, robot=original.robot))
+                rewritten_additions.append(action)
         candidate = _merge_augmented_actions(
             temp.working_actions, rewritten_additions, self.manifest
         )
@@ -672,17 +765,34 @@ class _AuthoringExecutor:
             if action.id not in original_after:
                 restored.append(action)
                 continue
-            old_after = original_after[action.id] or []
+            old_after = list(original_after[action.id] or [])
+            invalidated_old_edge = False
+            if action.id == original.id and old_open_id is not None:
+                filtered = [item for item in old_after if item != old_open_id]
+                invalidated_old_edge = filtered != old_after
+                old_after = filtered
+            if action.id == old_close_id:
+                filtered = [item for item in old_after if item != original.id]
+                invalidated_old_edge = invalidated_old_edge or filtered != old_after
+                old_after = filtered
             surviving = [item for item in old_after if item in candidate_ids]
-            removed = any(item not in candidate_ids for item in old_after)
+            removed = (
+                invalidated_old_edge
+                or any(item not in candidate_ids for item in old_after)
+            )
             if removed:
                 for item in action.after or []:
+                    if action.id == original.id and item == old_open_id:
+                        continue
+                    if action.id == old_close_id and item == original.id:
+                        continue
                     if item in candidate_ids and item not in surviving:
                         surviving.append(item)
             restored.append(replace(action, after=surviving or None))
 
         _validate_semantic_dependencies(restored)
         _validate_same_robot_dependency_order(restored)
+        require_semantic_assignments(self.manifest, restored)
         self.working_actions = restored
         self.current_plan = self.working_actions
         self.action_by_id = {action.id: action for action in restored}
@@ -885,6 +995,183 @@ def _validate_plan_refs(raw_refs: object, current_plan: list[AugmentedAction]) -
         # matching item in current_plan is the one authoritative source.
         resolved.append({"handle": handle, "action_id": action_id})
     return resolved
+
+
+def _facility_move_ids(
+    actions: list[AugmentedAction], facility: str, manifest: dict
+) -> list[str]:
+    """Return moves that require a destination or source facility session."""
+    objects = manifest.get("objects") or {}
+    result = []
+    for action in actions:
+        if action.op != "move":
+            continue
+        source = (objects.get(action.object or "") or {}).get("home_facility")
+        if action.dest == facility or (source == facility and action.dest != facility):
+            result.append(action.id)
+    return result
+
+
+def _preserve_facility_sessions(
+    initial: list[AugmentedAction],
+    candidate: list[AugmentedAction],
+    manifest: dict,
+    *,
+    skip_action_ids: set[str] | None = None,
+) -> list[AugmentedAction]:
+    """Reuse unmentioned open/close endpoints across a compound revision.
+
+    Authoring tools run sequentially.  Retargeting the last move out of a
+    container therefore removes its now-orphaned endpoints before a later
+    augment call can add a replacement move.  At commit time, compare the
+    completed candidate with the incoming plan and reuse any old endpoint
+    whose facility is still required.  This is manifest-driven and supports
+    complete open..close sessions as well as initially-open/close-only
+    cabinets.  Explicit endpoint reassignments are never overwritten.
+    """
+    skipped = skip_action_ids or set()
+    result = list(candidate)
+    initial_by_facility: dict[str, dict[str, AugmentedAction]] = {}
+    for action in initial:
+        if action.op not in {"open", "close"} or not action.facility:
+            continue
+        initial_by_facility.setdefault(action.facility, {})[action.op] = action
+
+    for facility, old_endpoints in initial_by_facility.items():
+        move_ids = _facility_move_ids(result, facility, manifest)
+        initial_move_ids = set(_facility_move_ids(initial, facility, manifest))
+        if not move_ids:
+            orphan_ids = {
+                action.id for action in result
+                if action.op in {"open", "close"}
+                and action.facility == facility
+                and action.id not in skipped
+            }
+            if orphan_ids:
+                by_id = {action.id: action for action in result}
+
+                def surviving_predecessors(
+                    action_id: str,
+                    trail: set[str],
+                    removed_ids: set[str] = orphan_ids,
+                    action_by_id: dict[str, AugmentedAction] = by_id,
+                ) -> list[str]:
+                    if action_id not in removed_ids:
+                        return [action_id]
+                    if action_id in trail:
+                        raise ValueError("semantic dependencies contain a cycle")
+                    predecessors: list[str] = []
+                    for predecessor in action_by_id[action_id].after or []:
+                        for survivor in surviving_predecessors(
+                            predecessor,
+                            trail | {action_id},
+                            removed_ids,
+                            action_by_id,
+                        ):
+                            if survivor not in predecessors:
+                                predecessors.append(survivor)
+                    return predecessors
+
+                cleaned: list[AugmentedAction] = []
+                for action in result:
+                    if action.id in orphan_ids:
+                        continue
+                    predecessors: list[str] = []
+                    for predecessor in action.after or []:
+                        for survivor in surviving_predecessors(predecessor, set()):
+                            if survivor != action.id and survivor not in predecessors:
+                                predecessors.append(survivor)
+                    cleaned.append(replace(action, after=predecessors or None))
+                result = cleaned
+            continue
+
+        remap: dict[str, str] = {}
+        chosen: dict[str, str] = {}
+        session_changed = set(move_ids) != initial_move_ids
+        for op in ("open", "close"):
+            old = old_endpoints.get(op)
+            current_index = next(
+                (
+                    index for index, action in enumerate(result)
+                    if action.op == op and action.facility == facility
+                ),
+                None,
+            )
+            if old is None or old.id in skipped:
+                if current_index is not None:
+                    chosen[op] = result[current_index].id
+                continue
+
+            old_index = next(
+                (index for index, action in enumerate(result) if action.id == old.id),
+                None,
+            )
+            if old_index is not None:
+                chosen[op] = old.id
+                continue
+
+            if current_index is not None:
+                current = result[current_index]
+                combined_after = list(old.after or [])
+                for predecessor in current.after or []:
+                    if predecessor not in combined_after:
+                        combined_after.append(predecessor)
+                result[current_index] = replace(old, after=combined_after or None)
+                remap[current.id] = old.id
+                chosen[op] = old.id
+                session_changed = True
+                continue
+
+            # Defensive fallback for a candidate that still uses the facility
+            # but did not derive an endpoint present in the incoming plan.
+            use_indices = [
+                index for index, action in enumerate(result)
+                if action.id in set(move_ids)
+            ]
+            insert_at = min(use_indices) if op == "open" else max(use_indices) + 1
+            result.insert(insert_at, old)
+            chosen[op] = old.id
+            session_changed = True
+
+        if not session_changed:
+            continue
+
+        if remap:
+            result = [
+                replace(
+                    action,
+                    after=list(dict.fromkeys(
+                        remap.get(item, item) for item in (action.after or [])
+                    )) or None,
+                )
+                for action in result
+            ]
+
+        current_ids = {action.id for action in result}
+        move_id_set = set(move_ids)
+        opener_id = chosen.get("open")
+        closer_id = chosen.get("close")
+        reconciled: list[AugmentedAction] = []
+        for action in result:
+            after = [
+                item for item in (action.after or [])
+                if item in current_ids
+                and not (
+                    action.id == closer_id
+                    and item in initial_move_ids
+                    and item not in move_id_set
+                )
+            ]
+            if action.id in move_id_set and opener_id and opener_id not in after:
+                after.append(opener_id)
+            if action.id == closer_id:
+                for move_id in move_ids:
+                    if move_id not in after:
+                        after.append(move_id)
+            reconciled.append(replace(action, after=after or None))
+        result = reconciled
+
+    return result
 
 
 def _merge_augmented_actions(
@@ -1442,7 +1729,10 @@ def _validate_reassign_topology(
             action for action in actions
             if action.op == "open" and action.facility == facility_name
         ]
-        if place.get("requires_open") and len(openers) != 1:
+        initially_open = (
+            (facility.get("articulation") or {}).get("initial_state") == "open"
+        )
+        if place.get("requires_open") and not initially_open and len(openers) != 1:
             raise ValueError(
                 f"container {facility_name!r} requires exactly one opener"
             )

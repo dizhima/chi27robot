@@ -51,10 +51,11 @@ action or `serves` value in current_plan. Do not call augment on the entire \
 current_plan and do not pass unchanged moves, because doing so could undo \
 manual edits.
 6. `augment` is authoritative for generated move/open/close actions and default \
-robot assignment. It keeps a batch that shares a pickup facility or destination \
-on one robot when possible; unrelated batches are then balanced by workload. \
-An explicit robot on a new batch owns and locks its newly generated facility \
-open/moves/close workflow. Merge the relevant returned actions into current_plan. When adding \
+robot assignment. It keeps a batch with the exact same pickup facility and destination \
+on one robot when capability permits; route batches are globally balanced by workload. \
+An explicit robot owns and locks the requested move, but a required facility \
+open/close may be assigned to a different capable support robot. Trust the \
+robots returned by augment and never rewrite them. Merge the relevant returned actions into current_plan. When adding \
 a move to an existing destination session, place it inside that session and \
 reuse the existing session open/close; do not duplicate open/close. If a \
 session close was manually deleted, keep it deleted unless the latest request \
@@ -147,11 +148,19 @@ anchor's robot. If the references span robots and no single insertion anchor is 
 identified, do not guess a robot from reference order; keep `augment`'s \
 workload-based assignment.
 8e. Robot inheritance applies to the requested new task and to any new \
-open/close actions that `augment` created exclusively for its new source or \
-destination session; passing the inherited robot to `augment` applies this \
-atomically. Never \
+move action. It applies to open/close actions that `augment` created exclusively \
+for that move only when the inherited robot is eligible; otherwise those support \
+actions may use a different robot selected from the articulation skill's eligible \
+robot list. Never \
 reassign an already-existing shared open/close action or another existing move \
 unless the latest request explicitly asks to reassign that whole workflow.
+
+Eligibility rejection:
+8f. A tool result with `error="assignment_rejected"` is an expected policy \
+rejection, not a system failure. Do not retry with a different robot unless the \
+user explicitly requested automatic reassignment. Finish with \
+`propose_plan(status="ungroundable")`; state the exact English `message` returned \
+by the tool and do not claim that any rejected change was applied.
 
 Finishing:
 9. Finish by calling `propose_plan` exactly once with `status="committed"` and \

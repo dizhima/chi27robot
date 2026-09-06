@@ -482,6 +482,16 @@ def to_openai(tool: ToolSpec) -> dict:
     }
 
 
+def to_openai_response(tool: ToolSpec) -> dict:
+    """OpenAI Responses API ``tools=[...]`` entry."""
+    return {
+        "type": "function",
+        "name": tool.name,
+        "description": tool.description,
+        "parameters": tool.parameters,
+    }
+
+
 def to_claude(tool: ToolSpec) -> dict:
     """Anthropic Messages `tools=[...]` entry. (Untested — no key yet.)"""
     return {

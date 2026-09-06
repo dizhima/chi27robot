@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from itertools import product
 
+from mujoco_skills.eligibility import (
+    AssignmentEligibilityError,
+    can_execute_skill,
+    can_pick,
+    can_place,
+)
 from mujoco_skills.orchestrator.schema import (
     AugmentedAction,
     SemanticTask,
     robot_ids_from_manifest,
 )
-
 
 # Estimated semantic work for deterministic authoring-time allocation. A move
 # expands to two navigations, pick, place, and reset; articulation/go-to actions
@@ -20,6 +26,11 @@ _WORK = {
     "close": 2.0,
     "go_to": 2.0,
 }
+
+# Exact search keeps allocation independent of the order in which the LLM
+# happened to mention tasks. Larger requests fall back to deterministic LPT
+# scheduling so authoring latency cannot grow exponentially.
+_MAX_EXACT_ASSIGNMENTS = 100_000
 
 
 def augment(
@@ -34,9 +45,9 @@ def augment(
     produce the same AugmentedAction list.
 
     `existing` is the current plan's actions (this turn's untouched work).
-    New moves that share a source or destination form an affinity group. The
-    group prefers one owner, while unrelated groups are assigned to the
-    least-loaded robot using estimated semantic work. An explicit robot on any
+    New moves with the exact same (source, destination) route form an affinity
+    group. Compatible groups keep one owner, while all groups are assigned
+    globally to minimize peak load and load spread. An explicit robot on any
     intent owns and locks the whole compatible group, including newly generated
     source/destination open and close actions.
 
@@ -75,14 +86,46 @@ def augment(
         seen_intent_ids.add(action.id)
         by_dest[action.dest].append(action)
 
+    eligible_by_intent = {}
+    for intent in actions:
+        eligible = []
+        first_rejection = None
+        for robot in robot_ids:
+            pick = can_pick(manifest, robot, intent.object)
+            place = can_place(manifest, robot, intent.dest)
+            rejection = pick if not pick["eligible"] else place
+            if rejection["eligible"]:
+                eligible.append(robot)
+            elif first_rejection is None:
+                first_rejection = rejection
+        eligible_by_intent[intent.id] = tuple(eligible)
+        if intent.robot is not None and intent.robot not in eligible:
+            pick = can_pick(manifest, intent.robot, intent.object)
+            decision = (
+                pick if not pick["eligible"]
+                else can_place(manifest, intent.robot, intent.dest))
+            raise AssignmentEligibilityError(decision, manifest)
+        if not eligible:
+            decision = dict(first_rejection or {})
+            decision.update({
+                "eligible": False,
+                "code": "NO_ELIGIBLE_ROBOT",
+                "robot": intent.robot or "",
+                "operation": "move",
+                "target": intent.dest,
+                "eligible_robots": [],
+            })
+            raise AssignmentEligibilityError(decision, manifest)
+
     assignment, assignment_locked = _assign_affinity_groups(
-        actions, current, objects, robot_ids, load, robot_order
+        actions, current, objects, robot_ids, load, robot_order,
+        eligible_by_intent,
     )
 
     result: list[AugmentedAction] = []
     used_action_ids: set[str] = {action.id for action in current}
     # Source containers are shared-world resources.  A single augmentation can
-    # contain moves to several destinations (and assign them to both robots),
+    # contain moves to several destinations (and assign them across robots),
     # so keep one source session across the whole batch instead of reopening the
     # same fridge/cabinet once per destination.
     generated_source_open_ids: dict[str, str] = {}
@@ -99,6 +142,9 @@ def augment(
             for action in current
         )
         assigned_moves = [(intent, assignment[intent.id]) for intent in session]
+        destination_articulation_robot = None
+        destination_open_id = None
+        destination_move_ids = []
         destination_locked = (
             len({robot for _, robot in assigned_moves}) == 1
             and all(assignment_locked[intent.id] for intent, _ in assigned_moves)
@@ -111,14 +157,21 @@ def augment(
                 raise ValueError(
                     f"destination {dest!r} requires opening but has no open skill"
                 )
-            open_robot = assigned_moves[0][1]
+            open_robot = _articulation_robot(
+                manifest, skills["open"], assigned_moves[0][1],
+                load, robot_order)
+            destination_articulation_robot = open_robot
+            destination_open_id = _unique_id(
+                f"{anchor}:open", used_action_ids)
             result.append(
                 AugmentedAction(
-                    id=_unique_id(f"{anchor}:open", used_action_ids),
+                    id=destination_open_id,
                     robot=open_robot,
                     op="open",
                     facility=dest,
-                    robot_locked=destination_locked,
+                    robot_locked=(
+                        destination_locked
+                        and open_robot == assigned_moves[0][1]),
                 )
             )
             load[open_robot] += _WORK["open"]
@@ -208,7 +261,9 @@ def augment(
                         f"source {source!r} requires opening but has no open skill"
                     )
                 source_anchor = source_moves[0][0].id
-                open_robot = source_moves[0][1]
+                open_robot = _articulation_robot(
+                    manifest, source_skills["open"], source_moves[0][1],
+                    load, robot_order)
                 source_open_id = _unique_id(
                     f"{source_anchor}:source:open", used_action_ids
                 )
@@ -218,7 +273,9 @@ def augment(
                         robot=open_robot,
                         op="open",
                         facility=source,
-                        robot_locked=source_locked,
+                        robot_locked=(
+                            source_locked
+                            and open_robot == source_moves[0][1]),
                     )
                 )
                 generated_source_open_ids[source] = source_open_id
@@ -227,6 +284,12 @@ def augment(
             for intent, robot in source_moves:
                 move_id = _unique_id(intent.id, used_action_ids)
                 source_move_ids.append(move_id)
+                destination_move_ids.append(move_id)
+                prerequisites = [
+                    dependency
+                    for dependency in (destination_open_id, source_open_id)
+                    if dependency is not None
+                ]
                 result.append(
                     AugmentedAction(
                         id=move_id,
@@ -239,7 +302,7 @@ def augment(
                         # List order only serializes one robot's work. An
                         # explicit semantic edge is required when another
                         # robot performs a pick from the same opened source.
-                        after=[source_open_id] if source_open_id else None,
+                        after=prerequisites or None,
                     )
                 )
 
@@ -260,20 +323,34 @@ def augment(
                 pending["locked"] = pending["locked"] and source_locked
 
         if not existing_destination and skills.get("close"):
-            close_robot = assigned_moves[-1][1]
+            close_robot = _articulation_robot(
+                manifest, skills["close"],
+                destination_articulation_robot or assigned_moves[-1][1],
+                load, robot_order)
             result.append(
                 AugmentedAction(
                     id=_unique_id(f"{anchor}:close", used_action_ids),
                     robot=close_robot,
                     op="close",
                     facility=dest,
-                    robot_locked=destination_locked,
+                    robot_locked=(
+                        destination_locked
+                        and close_robot == assigned_moves[-1][1]),
+                    # List order is not a cross-robot synchronization edge.
+                    # The support robot may close only after every mover has
+                    # completed this destination session.
+                    after=destination_move_ids or None,
                 )
             )
             load[close_robot] += _WORK["close"]
 
     for source, pending in pending_source_closes.items():
-        close_robot = pending["robot"]
+        source_skills = (
+            (facilities[source].get("articulation") or {}).get("skills")
+            or {})
+        close_robot = _articulation_robot(
+            manifest, source_skills["close"], pending["robot"],
+            load, robot_order)
         result.append(
             AugmentedAction(
                 id=_unique_id(
@@ -282,7 +359,8 @@ def augment(
                 robot=close_robot,
                 op="close",
                 facility=source,
-                robot_locked=pending["locked"],
+                robot_locked=(
+                    pending["locked"] and close_robot == pending["robot"]),
                 # Keep the source open until every shared transfer has
                 # completed, including moves assigned to another robot or
                 # headed to a different destination.
@@ -301,96 +379,166 @@ def _assign_affinity_groups(
     robot_ids: tuple[str, ...],
     load: dict[str, float],
     robot_order: dict[str, int],
+    eligible_by_intent: dict[str, tuple[str, ...]],
 ) -> tuple[dict[str, str], dict[str, bool]]:
-    """Assign connected source/destination groups with stable ownership."""
-    parents = list(range(len(intents)))
+    """Assign exact-route groups with deterministic global load balancing.
 
-    def find(index: int) -> int:
-        while parents[index] != index:
-            parents[index] = parents[parents[index]]
-            index = parents[index]
-        return index
-
-    def union(left: int, right: int) -> None:
-        left_root, right_root = find(left), find(right)
-        if left_root != right_root:
-            parents[right_root] = left_root
-
-    first_for_key: dict[tuple[str, str], int] = {}
-    intent_keys: list[set[tuple[str, str]]] = []
+    A route group is indivisible only when all of its moves have a common
+    eligible owner and its explicit assignments are compatible. Otherwise it
+    is split into singleton allocation units so grouping never makes a set of
+    individually feasible moves infeasible.
+    """
+    route_groups: dict[tuple[str | None, str], list[int]] = defaultdict(list)
     for index, intent in enumerate(intents):
-        keys = {("dest", intent.dest)}
         source = objects[intent.object].get("home_facility")
-        if source:
-            keys.add(("source", source))
-        intent_keys.append(keys)
-        for key in keys:
-            if key in first_for_key:
-                union(first_for_key[key], index)
-            else:
-                first_for_key[key] = index
+        route_groups[(source, intent.dest)].append(index)
 
-    components: dict[int, list[int]] = defaultdict(list)
-    for index in range(len(intents)):
-        components[find(index)].append(index)
-
-    existing_owners: dict[tuple[str, str], list[str]] = defaultdict(list)
+    existing_owners: dict[tuple[str | None, str], list[str]] = defaultdict(list)
     for action in existing:
-        if action.op != "move" or action.robot not in load:
+        if (action.op != "move" or action.robot not in load
+                or not action.dest):
             continue
-        if action.dest:
-            existing_owners[("dest", action.dest)].append(action.robot)
         descriptor = objects.get(action.object or "", {})
         source = descriptor.get("home_facility")
-        if source:
-            existing_owners[("source", source)].append(action.robot)
+        existing_owners[(source, action.dest)].append(action.robot)
 
-    assigned: dict[str, str] = {}
-    locked: dict[str, bool] = {}
-    for indices in components.values():
-        explicit = [
+    units: list[dict] = []
+    for route, indices in route_groups.items():
+        common_eligible = set(robot_ids)
+        for index in indices:
+            common_eligible &= set(eligible_by_intent[intents[index].id])
+        explicit = {
             intents[index].robot
             for index in indices
             if intents[index].robot is not None
-        ]
-        explicit_set = set(explicit)
-        keys = set().union(*(intent_keys[index] for index in indices))
-
-        if len(explicit_set) == 1:
-            owner = explicit[0]
-            lock_group = True
-        else:
-            candidates = [
-                robot
-                for key in keys
-                for robot in existing_owners.get(key, [])
-            ]
-            if candidates:
-                counts = {robot: candidates.count(robot) for robot in robot_ids}
-                owner = min(
-                    robot_ids,
-                    key=lambda robot: (-counts[robot], load[robot], robot_order[robot]),
-                )
-            elif explicit:
-                counts = {robot: explicit.count(robot) for robot in robot_ids}
-                owner = min(
-                    robot_ids,
-                    key=lambda robot: (-counts[robot], load[robot], robot_order[robot]),
-                )
+        }
+        compatible_explicit = (
+            len(explicit) <= 1
+            and (not explicit or next(iter(explicit)) in common_eligible)
+        )
+        if common_eligible and compatible_explicit:
+            candidates = tuple(
+                robot for robot in robot_ids if robot in common_eligible)
+            lock_group = bool(explicit)
+            if explicit:
+                candidates = (next(iter(explicit)),)
             else:
-                owner = min(robot_ids, key=lambda robot: (load[robot], robot_order[robot]))
-            lock_group = False
+                prior_owners = set(existing_owners.get(route, []))
+                if len(prior_owners) == 1:
+                    prior_owner = next(iter(prior_owners))
+                    if prior_owner in common_eligible:
+                        candidates = (prior_owner,)
+            units.append({
+                "route": route,
+                "indices": tuple(indices),
+                "candidates": candidates,
+                "locked": lock_group,
+            })
+            continue
 
+        # Conflicting hard assignments or an empty eligibility intersection
+        # mean this route cannot safely remain one batch.
         for index in indices:
             intent = intents[index]
-            robot = intent.robot or owner
-            assigned[intent.id] = robot
+            candidates = (
+                (intent.robot,)
+                if intent.robot is not None
+                else tuple(eligible_by_intent[intent.id])
+            )
+            units.append({
+                "route": route,
+                "indices": (index,),
+                "candidates": candidates,
+                "locked": intent.robot is not None,
+            })
+
+    def route_key(unit: dict) -> tuple[str, str, tuple[str, ...]]:
+        source, dest = unit["route"]
+        ids = tuple(sorted(intents[index].id for index in unit["indices"]))
+        return (source or "", dest, ids)
+
+    # Canonical ordering makes both exact search and its tie-break independent
+    # of prompt/task mention order. LPT also gives the bounded fallback a good
+    # approximation of the minimax assignment.
+    units.sort(key=lambda unit: (
+        -len(unit["indices"]), route_key(unit)))
+
+    def preference_penalty(unit: dict, owner: str) -> int:
+        owners = existing_owners.get(unit["route"], [])
+        return len(owners) - owners.count(owner)
+
+    combination_count = 1
+    for unit in units:
+        combination_count *= len(unit["candidates"])
+        if combination_count > _MAX_EXACT_ASSIGNMENTS:
+            break
+
+    owners: tuple[str, ...]
+    if combination_count <= _MAX_EXACT_ASSIGNMENTS:
+        best_score = None
+        best_owners = None
+        for candidate_owners in product(*(
+                unit["candidates"] for unit in units)):
+            projected = dict(load)
+            affinity_penalty = 0
+            for unit, owner in zip(units, candidate_owners):
+                projected[owner] += len(unit["indices"]) * _WORK["move"]
+                affinity_penalty += preference_penalty(unit, owner)
+            values = tuple(projected[robot] for robot in robot_ids)
+            score = (
+                max(values),
+                max(values) - min(values),
+                sum(value * value for value in values),
+                affinity_penalty,
+                tuple(robot_order[owner] for owner in candidate_owners),
+            )
+            if best_score is None or score < best_score:
+                best_score = score
+                best_owners = candidate_owners
+        owners = best_owners or ()
+    else:
+        chosen = []
+        projected = dict(load)
+        for unit in units:
+            owner = min(
+                unit["candidates"],
+                key=lambda robot: (
+                    projected[robot]
+                    + len(unit["indices"]) * _WORK["move"],
+                    preference_penalty(unit, robot),
+                    robot_order[robot],
+                ),
+            )
+            chosen.append(owner)
+            projected[owner] += len(unit["indices"]) * _WORK["move"]
+        owners = tuple(chosen)
+
+    assigned: dict[str, str] = {}
+    locked: dict[str, bool] = {}
+    for unit, owner in zip(units, owners):
+        for index in unit["indices"]:
+            intent = intents[index]
+            assigned[intent.id] = owner
             # One unambiguous explicit owner expresses ownership of the whole
             # affinity group, not merely the individual move carrying the field.
-            locked[intent.id] = lock_group or intent.robot is not None
-            load[robot] += _WORK["move"]
+            locked[intent.id] = unit["locked"] or intent.robot is not None
+            load[owner] += _WORK["move"]
 
     return assigned, locked
+
+
+def _articulation_robot(manifest: dict, skill_name: str, preferred: str,
+                        load: dict[str, float], robot_order: dict[str, int]):
+    decision = can_execute_skill(manifest, preferred, skill_name)
+    eligible = tuple(decision.get("eligible_robots") or [])
+    if decision["eligible"]:
+        return preferred
+    if not eligible:
+        raise AssignmentEligibilityError(decision, manifest)
+    return min(
+        eligible,
+        key=lambda robot: (load.get(robot, 0.0), robot_order.get(robot, 10**6)),
+    )
 
 
 def _unique_id(base: str, used: set[str]) -> str:

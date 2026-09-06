@@ -518,6 +518,18 @@ def _steps(
     else:
         raise ValueError(f"unsupported augmented action op {action.op!r}")
 
+    # Reset is a template convenience, not part of the semantic request.
+    # Morphology-aware robots may already end manipulation in their ready pose
+    # without exposing a standalone reset primitive (Stretch currently does).
+    # Legacy Panda descriptors remain permissive and keep the historical
+    # template unchanged.
+    supported_ops = (
+        (manifest.get("robots") or {}).get(action.robot, {})
+        .get("supported_ops")
+    )
+    if supported_ops is not None and "reset" not in supported_ops:
+        raw = [step for step in raw if step.get("op") != "reset"]
+
     return [
         {
             "id": f"{action.id}:s{index}",

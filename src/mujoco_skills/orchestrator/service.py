@@ -139,10 +139,14 @@ class CompileServiceError(ValueError):
 
 
 def _compile_progress_event(completed: int, total: int) -> dict:
+    percentage = (
+        min(100, max(0, round(completed * 100 / total)))
+        if total > 0 else 0
+    )
     return {
         "type": "progress",
         "stage": "compiling",
-        "text": f"Compiling the plan. ({completed}/{total})",
+        "text": f"Compiling the plan. ({percentage}%)",
         "completed": completed,
         "total": total,
     }

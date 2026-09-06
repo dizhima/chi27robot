@@ -23,8 +23,8 @@ tracks) with:
 from __future__ import annotations
 
 import bisect
-import copy
 import contextvars
+import copy
 import hashlib
 import json
 import math
@@ -37,14 +37,20 @@ from collections import OrderedDict
 from contextlib import contextmanager
 from pathlib import Path
 
-import numpy as np
 import mujoco
+import numpy as np
 
+from mujoco_skills.eligibility import require_plan_assignments
 from mujoco_skills.pipeline.build_navigation_grid import (
     ensure_navigation_grid,
     navigation_grid_paths,
 )
 from mujoco_skills.pipeline.navigation_planner import plan_grid_route
+from mujoco_skills.robot_descriptors import (
+    PANDAOMRON,
+    STRETCH,
+    robot_descriptor,
+)
 
 FPS = 30.0
 
@@ -3350,6 +3356,110 @@ def _extend_track_with_settle_objects(track, object_frames):
     track["meta"]["duration"] = track["time"][-1]
 
 
+def _qpos_at_track_frame(rig, q, track, frame_index):
+    """Overlay one authored track frame onto a qpos snapshot."""
+    framed_q = q.copy()
+    for joint_name, values in track["channels"].items():
+        joint_id = mujoco.mj_name2id(
+            rig.model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
+        if joint_id < 0:
+            continue
+        qpos_address = int(rig.model.jnt_qposadr[joint_id])
+        next_address = (
+            int(rig.model.jnt_qposadr[joint_id + 1])
+            if joint_id + 1 < rig.model.njnt else rig.model.nq)
+        frame_value = np.asarray(values[frame_index], dtype=float).reshape(-1)
+        width = min(next_address - qpos_address, len(frame_value))
+        framed_q[qpos_address:qpos_address + width] = frame_value[:width]
+    return framed_q
+
+
+def _replay_stretch_release_physically(
+        rig, q, track, object_poses, release_frame):
+    """Simulate released objects while Stretch continues its authored motion.
+
+    Physics starts on the track's first detached frame. Robot channels remain
+    scripted at physics rate, so withdrawal happens concurrently with
+    gravity/contact instead of freezing either the object or the arm.
+    """
+    if not object_poses:
+        return {}
+    if not 0 <= release_frame < len(track["time"]):
+        raise ValueError("release physics frame is outside the track")
+
+    model, data = rig.model, rig.data
+    object_joints = {_obj_joint(name) for name in object_poses}
+    scripted = []
+    for joint_name, values in track["channels"].items():
+        if joint_name in object_joints:
+            continue
+        joint_id = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
+        if joint_id < 0:
+            continue
+        qpos_address = int(model.jnt_qposadr[joint_id])
+        next_qpos = (
+            int(model.jnt_qposadr[joint_id + 1])
+            if joint_id + 1 < model.njnt else model.nq)
+        dof_address = int(model.jnt_dofadr[joint_id])
+        next_dof = (
+            int(model.jnt_dofadr[joint_id + 1])
+            if joint_id + 1 < model.njnt else model.nv)
+        scripted.append((values, qpos_address, next_qpos, dof_address,
+                         next_dof))
+
+    data.qpos[:] = _qpos_at_track_frame(rig, q, track, release_frame)
+    object_addresses = {}
+    for obj_name, (position, quaternion) in object_poses.items():
+        address = rig.jadr(_obj_joint(obj_name))
+        object_addresses[obj_name] = address
+        data.qpos[address:address + 3] = position
+        data.qpos[address + 3:address + 7] = quaternion
+        obj_joint = _obj_joint(obj_name)
+        if obj_joint not in track["channels"]:
+            track["channels"][obj_joint] = [
+                [*map(float, position), *map(float, quaternion)]
+                for _ in track["time"]]
+    data.qvel[:] = 0.0
+    mujoco.mj_forward(model, data)
+
+    for frame_index in range(release_frame, len(track["time"]) - 1):
+        span = max(
+            float(track["time"][frame_index + 1]
+                  - track["time"][frame_index]), 1e-6)
+        substeps = max(1, int(round(span / float(model.opt.timestep))))
+        for substep in range(1, substeps + 1):
+            alpha = substep / substeps
+            for values, qadr, next_qadr, dadr, next_dadr in scripted:
+                start = np.asarray(values[frame_index], dtype=float)
+                end = np.asarray(values[frame_index + 1], dtype=float)
+                target = (1.0 - alpha) * start + alpha * end
+                qwidth = next_qadr - qadr
+                data.qpos[qadr:next_qadr] = target[:qwidth]
+                # Scalar arm/lift/gripper joints get the authored velocity.
+                # The free base is stationary in Stretch manipulation tracks.
+                if qwidth == 1 and next_dadr - dadr == 1:
+                    data.qvel[dadr] = float(end[0] - start[0]) / span
+                else:
+                    data.qvel[dadr:next_dadr] = 0.0
+            mujoco.mj_step(model, data)
+        for obj_name, address in object_addresses.items():
+            track["channels"][_obj_joint(obj_name)][frame_index + 1] = [
+                *map(float, data.qpos[address:address + 3]),
+                *map(float, data.qpos[address + 3:address + 7]),
+            ]
+
+    track["meta"]["release_physics_start_frame"] = int(release_frame)
+    track["meta"]["release_physics_concurrent_with_robot"] = True
+    return {
+        obj_name: (
+            data.qpos[address:address + 3].copy(),
+            data.qpos[address + 3:address + 7].copy(),
+        )
+        for obj_name, address in object_addresses.items()
+    }
+
+
 def _extend_track_with_settle(track, obj_name, frames):
     """Backward-compatible single-object wrapper."""
     _extend_track_with_settle_objects(track, {obj_name: frames})
@@ -4114,6 +4224,1215 @@ def get_rig(scene_xml, robot, ready=None, island=None):
     if island is not None:
         rig.set_island(island)
     return rig
+
+
+class UnsupportedRobotAdapterError(ValueError):
+    """A recognized robot has no motion adapter in this compiler build."""
+
+    code = "robot_adapter_not_implemented"
+
+    def __init__(self, robot_id, robot_type):
+        self.robot_id = str(robot_id)
+        self.robot_type = str(robot_type)
+        super().__init__(
+            f"robot '{self.robot_id}' is type '{self.robot_type}', but its "
+            "execution adapter is not implemented")
+
+    def to_dict(self):
+        return {
+            "code": self.code,
+            "robot": self.robot_id,
+            "robot_type": self.robot_type,
+            "message": str(self),
+        }
+
+
+class RobotAdapter:
+    """Minimal compiler boundary between logical robots and morphology code."""
+
+    robot_type = None
+
+    def compile_steps(self, robot_name, steps, **kwargs):
+        raise NotImplementedError
+
+
+class PandaOmronAdapter(RobotAdapter):
+    """Compatibility wrapper around the mature PandaOmron ``SceneRig``."""
+
+    robot_type = PANDAOMRON
+
+    def __init__(self, rig, robot_id, descriptor):
+        self.rig = rig
+        self.robot_id = robot_id
+        self.descriptor = descriptor
+
+    def __getattr__(self, name):
+        # Existing geometry code continues to operate on the proven SceneRig
+        # surface while new compiler entry points dispatch through an adapter.
+        return getattr(self.rig, name)
+
+    def compile_steps(self, robot_name, steps, **kwargs):
+        return compile_robot(self.rig, robot_name, steps, **kwargs)
+
+
+class StretchRobotAdapter(RobotAdapter):
+    """Stretch execution surface, introduced one accepted primitive at a time.
+
+    Stretch's mobile base is represented by one MuJoCo free joint rather than
+    PandaOmron's three planar scalar joints.  Navigation therefore owns a
+    morphology-specific track generator, but emits the same name-addressed
+    channel-track and compiler item contracts as every other robot.
+    """
+
+    robot_type = STRETCH
+
+    def __init__(self, scene_xml, robot_id, descriptor, island=None):
+        self.scene_path = Path(scene_xml).resolve()
+        self.model = mujoco.MjModel.from_xml_path(str(scene_xml))
+        self.data = mujoco.MjData(self.model)
+        self.robot_id = str(robot_id)
+        self.descriptor = descriptor
+        self.robot = int(descriptor["index"])
+        self.namespace = str(descriptor["namespace"])
+        self.root_joint_name = descriptor["joints"]["base"][0]
+        self.root_joint = mujoco.mj_name2id(
+            self.model, mujoco.mjtObj.mjOBJ_JOINT, self.root_joint_name)
+        self.ROOT = int(self.model.jnt_qposadr[self.root_joint])
+        self.base_body = mujoco.mj_name2id(
+            self.model, mujoco.mjtObj.mjOBJ_BODY,
+            descriptor["tracking_body"])
+        self.ARM = [self.jadr(name) for name in descriptor["joints"]["arm"]]
+        self.TORSO = self.jadr(descriptor["joints"]["lift"][0])
+        lift_joint = mujoco.mj_name2id(
+            self.model, mujoco.mjtObj.mjOBJ_JOINT,
+            descriptor["joints"]["lift"][0])
+        self.ready_lift = float(self.model.jnt_range[lift_joint, 1])
+        self.FINGERS = [
+            self.jadr(name) for name in descriptor["joints"]["gripper"]]
+        self.WRIST = self.jadr(descriptor["joints"]["wrist"][0])
+        self.gripper_body = mujoco.mj_name2id(
+            self.model, mujoco.mjtObj.mjOBJ_BODY,
+            f"{self.namespace}_link_gripper_slider")
+        self.tip_bodies = [
+            mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, name)
+            for name in descriptor["eef_bodies"]
+        ]
+        if self.gripper_body < 0 or any(body < 0 for body in self.tip_bodies):
+            raise ValueError(f"Stretch '{robot_id}' gripper bodies are incomplete")
+        self.robot_joint_names = [
+            name
+            for group in descriptor["joints"].values()
+            for name in group
+        ]
+        self.ready = None
+        self.finger_open = [
+            float(self.model.key_qpos[0, address])
+            if self.model.nkey else float(self.model.qpos0[address])
+            for address in self.FINGERS
+        ]
+        if island is not None:
+            self.set_island(island)
+        mujoco.mj_forward(self.model, self.data)
+
+    def jadr(self, name):
+        joint = mujoco.mj_name2id(
+            self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
+        if joint < 0:
+            raise ValueError(f"unknown Stretch joint '{name}'")
+        return int(self.model.jnt_qposadr[joint])
+
+    def set_ready(self, ready):
+        self.ready = dict(ready)
+        self.ready["torso"] = self.ready_lift
+
+    def apply_ready(self, q):
+        if self.ready is None:
+            return q
+        for address, value in zip(self.ARM, self.ready["arm"]):
+            q[address] = value
+        q[self.TORSO] = self.ready_lift
+        return q
+
+    def set_fingers(self, q, state):
+        for address, value in zip(self.FINGERS, state):
+            q[address] = value
+
+    def set_island(self, bbox):
+        self.island_bbox = tuple(bbox)
+
+    def base_xy(self, q):
+        return np.asarray(q[self.ROOT:self.ROOT + 2], dtype=float).copy()
+
+    def chassis_xy(self, q):
+        return self.base_xy(q)
+
+    def base_forward(self, q):
+        yaw = _stretch_root_yaw(q[self.ROOT + 3:self.ROOT + 7])
+        return np.array([math.cos(yaw), math.sin(yaw)])
+
+    def eef_pose(self, q):
+        """Midpoint of the rubber tips plus the gripper-slider orientation."""
+        self.data.qpos[:] = q
+        mujoco.mj_forward(self.model, self.data)
+        position = np.mean(
+            [self.data.xpos[body] for body in self.tip_bodies], axis=0)
+        return position.copy(), self.data.xquat[self.gripper_body].copy()
+
+    def compile_steps(self, robot_name, steps, **kwargs):
+        return compile_stretch_robot(self, robot_name, steps, **kwargs)
+
+
+def _stretch_root_yaw(quaternion):
+    """Yaw of an upright wxyz free-joint quaternion."""
+    w, x, y, z = map(float, quaternion)
+    return math.atan2(2.0 * (w * z + x * y),
+                      1.0 - 2.0 * (y * y + z * z))
+
+
+def _stretch_yaw_quaternion(yaw):
+    return np.array([math.cos(yaw / 2.0), 0.0, 0.0,
+                     math.sin(yaw / 2.0)], dtype=float)
+
+
+def gen_stretch_navigate(rig, q_start, standoff, carrying=None,
+                         label="navigate", via_points=None):
+    """Generate a standard channel track for Stretch's free-joint base.
+
+    Travel uses the chassis forward axis.  At the destination Stretch turns
+    its left-side telescoping arm toward ``face_xy``; this final side-on pose
+    is what the following pick primitive will consume.
+    """
+    start = rig.base_xy(q_start)
+    goal = np.asarray(standoff["standoff_xy"], dtype=float)[:2]
+    face = np.asarray(standoff["face_xy"], dtype=float)[:2]
+    route = plan_grid_route(
+        ensure_navigation_grid(rig.scene_path), start, goal,
+        list(via_points or []))
+
+    poses = [q_start.copy()]
+    durations = []
+    phases = []
+    current_yaw = _stretch_root_yaw(
+        q_start[rig.ROOT + 3:rig.ROOT + 7])
+    previous = np.asarray(route[0], dtype=float)
+    for waypoint in route[1:]:
+        waypoint = np.asarray(waypoint, dtype=float)
+        delta = waypoint - previous
+        distance = float(np.linalg.norm(delta))
+        if distance < 1e-9:
+            continue
+        travel_yaw = math.atan2(float(delta[1]), float(delta[0]))
+        travel_yaw = current_yaw + _wrap_pi(travel_yaw - current_yaw)
+        if abs(travel_yaw - current_yaw) > 1e-6:
+            rotated = poses[-1].copy()
+            rotated[rig.ROOT + 3:rig.ROOT + 7] = _stretch_yaw_quaternion(
+                travel_yaw)
+            poses.append(rotated)
+            durations.append(max(0.3, abs(travel_yaw - current_yaw) / YAW_SPEED))
+            phases.append("navigate_rotate")
+        translated = poses[-1].copy()
+        translated[rig.ROOT:rig.ROOT + 2] = waypoint
+        poses.append(translated)
+        durations.append(max(0.4, distance / BASE_SPEED))
+        phases.append("navigate_drive")
+        previous = waypoint
+        current_yaw = travel_yaw
+
+    direction = face - goal
+    if float(np.linalg.norm(direction)) < 1e-9:
+        final_yaw = current_yaw
+    else:
+        # Stretch's arm extends along local -Y.  Rotate that axis toward the
+        # target while preserving the logical standoff/face contract.
+        arm_heading = math.atan2(float(direction[1]), float(direction[0]))
+        final_yaw = current_yaw + _wrap_pi(
+            arm_heading + math.pi / 2.0 - current_yaw)
+    if abs(final_yaw - current_yaw) > 1e-6:
+        aligned = poses[-1].copy()
+        aligned[rig.ROOT + 3:rig.ROOT + 7] = _stretch_yaw_quaternion(final_yaw)
+        poses.append(aligned)
+        durations.append(max(0.3, abs(final_yaw - current_yaw) / YAW_SPEED))
+        phases.append("navigate_align_arm")
+
+    root_frames = []
+    object_frames = []
+    time_values = []
+    phase_values = []
+    elapsed = 0.0
+    for segment, duration in enumerate(durations):
+        frame_count = max(1, int(round(duration * FPS)))
+        start_pose, end_pose = poses[segment], poses[segment + 1]
+        for frame in range(frame_count):
+            alpha = frame / frame_count
+            root = np.empty(7, dtype=float)
+            root[:3] = ((1.0 - alpha) * start_pose[rig.ROOT:rig.ROOT + 3]
+                        + alpha * end_pose[rig.ROOT:rig.ROOT + 3])
+            root[3:] = quat_slerp(
+                start_pose[rig.ROOT + 3:rig.ROOT + 7],
+                end_pose[rig.ROOT + 3:rig.ROOT + 7], alpha)
+            root_frames.append(root.tolist())
+            if carrying is not None:
+                q_frame = (1.0 - alpha) * start_pose + alpha * end_pose
+                q_frame[rig.ROOT:rig.ROOT + 3] = root[:3]
+                q_frame[rig.ROOT + 3:rig.ROOT + 7] = root[3:]
+                position, quaternion = _carried_pose(
+                    rig, q_frame, carrying["off_pos"],
+                    carrying["off_quat"])
+                object_frames.append([
+                    *map(float, position), *map(float, quaternion)])
+            time_values.append(round(elapsed, 5))
+            phase_values.append(phases[segment])
+            elapsed += 1.0 / FPS
+    root_frames.append(poses[-1][rig.ROOT:rig.ROOT + 7].astype(float).tolist())
+    if carrying is not None:
+        position, quaternion = _carried_pose(
+            rig, poses[-1], carrying["off_pos"], carrying["off_quat"])
+        object_frames.append([
+            *map(float, position), *map(float, quaternion)])
+        object_address = rig.jadr(_obj_joint(carrying["name"]))
+        poses[-1][object_address:object_address + 3] = position
+        poses[-1][object_address + 3:object_address + 7] = quaternion
+    time_values.append(round(elapsed, 5))
+    phase_values.append(phases[-1] if phases else "navigate")
+
+    track = {
+        "meta": {
+            "skill": label,
+            "robot_index": rig.robot,
+            "robot_type": STRETCH,
+            "scene_nq": int(rig.model.nq),
+            "fixture_joints": [],
+            "n_frames": len(time_values),
+            "duration": time_values[-1],
+            "via_points": [list(map(float, point)) for point in (via_points or [])],
+            "route": [list(map(float, point)) for point in route],
+        },
+        "time": time_values,
+        "phase": phase_values,
+        "channels": {
+            rig.root_joint_name: root_frames,
+            rig.descriptor["joints"]["lift"][0]: [
+                [rig.ready_lift] for _ in time_values
+            ],
+        },
+    }
+    if carrying is not None:
+        track["channels"][_obj_joint(carrying["name"])] = object_frames
+        track["meta"]["held_object"] = carrying["name"]
+    return track, poses[-1].copy()
+
+
+def _set_stretch_extension(rig, q, total_extension):
+    each = float(total_extension) / len(rig.ARM)
+    for address in rig.ARM:
+        q[address] = each
+
+
+def _set_stretch_grip(rig, q, slide):
+    """Set the driven slide and the two equality-coupled visual joints."""
+    slide = float(slide)
+    q[rig.FINGERS[0]] = slide
+    q[rig.FINGERS[1]] = 10.0 * slide
+    q[rig.FINGERS[2]] = 10.0 * slide
+
+
+def _stretch_grasp_solution(rig, q_start, target_pos, closed_slide=0.004):
+    """Solve Stretch's low-dimensional side grasp without a general IK.
+
+    For each candidate wrist yaw, telescoping extension is the projection of
+    the target onto the arm's measured world direction and lift is a direct
+    vertical correction.  The best feasible rubber-tip midpoint is retained.
+    """
+    target_pos = np.asarray(target_pos, dtype=float)
+    arm_joint = mujoco.mj_name2id(
+        rig.model, mujoco.mjtObj.mjOBJ_JOINT,
+        rig.descriptor["joints"]["arm"][0])
+    arm_total_max = float(rig.model.jnt_range[arm_joint, 1]) * len(rig.ARM)
+    lift_joint = mujoco.mj_name2id(
+        rig.model, mujoco.mjtObj.mjOBJ_JOINT,
+        rig.descriptor["joints"]["lift"][0])
+    lift_min, lift_max = map(float, rig.model.jnt_range[lift_joint])
+    wrist_joint = mujoco.mj_name2id(
+        rig.model, mujoco.mjtObj.mjOBJ_JOINT,
+        rig.descriptor["joints"]["wrist"][0])
+    wrist_min, wrist_max = map(float, rig.model.jnt_range[wrist_joint])
+
+    best = None
+    low = max(wrist_min, -0.35)
+    high = min(wrist_max, 0.35)
+    for wrist in np.linspace(low, high, 141):
+        probe = q_start.copy()
+        probe[rig.WRIST] = float(wrist)
+        probe[rig.TORSO] = 0.0
+        _set_stretch_extension(rig, probe, 0.0)
+        _set_stretch_grip(rig, probe, closed_slide)
+        origin, _ = rig.eef_pose(probe)
+
+        extended = probe.copy()
+        trial_extension = min(0.04, arm_total_max)
+        _set_stretch_extension(rig, extended, trial_extension)
+        moved, _ = rig.eef_pose(extended)
+        arm_direction = (moved - origin) / trial_extension
+        total_extension = float(np.dot(target_pos - origin, arm_direction))
+        total_extension = min(max(total_extension, 0.0), arm_total_max)
+        lift = min(max(float(target_pos[2] - origin[2]), lift_min), lift_max)
+
+        solved = probe.copy()
+        solved[rig.TORSO] = lift
+        _set_stretch_extension(rig, solved, total_extension)
+        midpoint, _ = rig.eef_pose(solved)
+        error = float(np.linalg.norm(midpoint - target_pos))
+        score = error + 0.002 * abs(float(wrist))
+        if best is None or score < best[0]:
+            best = (score, solved, error, total_extension, lift, float(wrist))
+
+    _, grasp_q, error, extension, lift, wrist = best
+    if error > 0.025:
+        raise ValueError(
+            "Stretch side grasp is unreachable: rubber-tip midpoint error "
+            f"{error:.3f}m exceeds 0.025m")
+    return grasp_q, {
+        "eef_error": error,
+        "total_extension": extension,
+        "lift": lift,
+        "wrist_yaw": wrist,
+        "closed_slide": float(closed_slide),
+    }
+
+
+def _build_stretch_object_track(rig, label, waypoints, durations, phases,
+                                obj_name, attach_from_segment, off_pos,
+                                off_quat, static_pose,
+                                detach_from_segment=None):
+    scalar_names = [
+        rig.descriptor["joints"]["lift"][0],
+        *rig.descriptor["joints"]["arm"],
+        *rig.descriptor["joints"]["wrist"],
+        *rig.descriptor["joints"]["gripper"],
+    ]
+    channels = {rig.root_joint_name: []}
+    channels.update({name: [] for name in scalar_names})
+    channels[_obj_joint(obj_name)] = []
+    addresses = {name: rig.jadr(name) for name in scalar_names}
+    times = []
+    phase_values = []
+    elapsed = 0.0
+    detach_segment = (
+        len(durations) + 1
+        if detach_from_segment is None else int(detach_from_segment)
+    )
+
+    def append_frame(q, phase, attached):
+        nonlocal elapsed
+        channels[rig.root_joint_name].append(
+            q[rig.ROOT:rig.ROOT + 7].astype(float).tolist())
+        for name in scalar_names:
+            channels[name].append([float(q[addresses[name]])])
+        if attached:
+            position, quaternion = _carried_pose(rig, q, off_pos, off_quat)
+        else:
+            position, quaternion = static_pose
+        channels[_obj_joint(obj_name)].append([
+            *map(float, position), *map(float, quaternion)])
+        times.append(round(elapsed, 5))
+        phase_values.append(phase)
+
+    for segment, duration in enumerate(durations):
+        frame_count = max(1, int(round(float(duration) * FPS)))
+        start, end = waypoints[segment], waypoints[segment + 1]
+        for frame in range(frame_count):
+            alpha = frame / frame_count
+            q = (1.0 - alpha) * start + alpha * end
+            # The base is stationary here, but preserve a normalized free-joint
+            # quaternion rather than relying on component-wise interpolation.
+            q[rig.ROOT + 3:rig.ROOT + 7] = quat_slerp(
+                start[rig.ROOT + 3:rig.ROOT + 7],
+                end[rig.ROOT + 3:rig.ROOT + 7], alpha)
+            append_frame(
+                q, phases[segment],
+                attach_from_segment <= segment < detach_segment)
+            elapsed += 1.0 / FPS
+    append_frame(
+        waypoints[-1], phases[-1],
+        attach_from_segment <= len(durations) < detach_segment)
+    return {
+        "meta": {
+            "skill": label,
+            "robot_index": rig.robot,
+            "robot_type": STRETCH,
+            "scene_nq": int(rig.model.nq),
+            "fixture_joints": [],
+            "n_frames": len(times),
+            "duration": times[-1],
+        },
+        "time": times,
+        "phase": phase_values,
+        "channels": channels,
+    }
+
+
+def _build_stretch_joint_track(rig, label, waypoints, durations, phases,
+                               carrying=None):
+    """Build a morphology-native reset/wait track with optional object carry."""
+    scalar_names = [
+        rig.descriptor["joints"]["lift"][0],
+        *rig.descriptor["joints"]["arm"],
+        *rig.descriptor["joints"]["wrist"],
+        *rig.descriptor["joints"]["gripper"],
+    ]
+    channels = {rig.root_joint_name: []}
+    channels.update({name: [] for name in scalar_names})
+    addresses = {name: rig.jadr(name) for name in scalar_names}
+    if carrying is not None:
+        channels[_obj_joint(carrying["name"])] = []
+    times = []
+    phase_values = []
+    elapsed = 0.0
+
+    def append_frame(q, phase):
+        channels[rig.root_joint_name].append(
+            q[rig.ROOT:rig.ROOT + 7].astype(float).tolist())
+        for name in scalar_names:
+            channels[name].append([float(q[addresses[name]])])
+        if carrying is not None:
+            position, quaternion = _carried_pose(
+                rig, q, carrying["off_pos"], carrying["off_quat"])
+            channels[_obj_joint(carrying["name"])].append([
+                *map(float, position), *map(float, quaternion)])
+        times.append(round(elapsed, 5))
+        phase_values.append(phase)
+
+    for segment, duration in enumerate(durations):
+        frame_count = max(1, int(round(float(duration) * FPS)))
+        start, end = waypoints[segment], waypoints[segment + 1]
+        for frame in range(frame_count):
+            alpha = frame / frame_count
+            q = (1.0 - alpha) * start + alpha * end
+            q[rig.ROOT + 3:rig.ROOT + 7] = quat_slerp(
+                start[rig.ROOT + 3:rig.ROOT + 7],
+                end[rig.ROOT + 3:rig.ROOT + 7], alpha)
+            append_frame(q, phases[segment])
+            elapsed += 1.0 / FPS
+    append_frame(waypoints[-1], phases[-1])
+    final_q = waypoints[-1].copy()
+    if carrying is not None:
+        position, quaternion = _carried_pose(
+            rig, final_q, carrying["off_pos"], carrying["off_quat"])
+        object_address = rig.jadr(_obj_joint(carrying["name"]))
+        final_q[object_address:object_address + 3] = position
+        final_q[object_address + 3:object_address + 7] = quaternion
+    return {
+        "meta": {
+            "skill": label,
+            "robot_index": rig.robot,
+            "robot_type": STRETCH,
+            "scene_nq": int(rig.model.nq),
+            "fixture_joints": [],
+            "n_frames": len(times),
+            "duration": times[-1],
+        },
+        "time": times,
+        "phase": phase_values,
+        "channels": channels,
+    }, final_q
+
+
+def gen_stretch_reset(
+        rig, q_start, retreat=RESET_RETREAT_DEFAULT,
+        preserve_yaw=True, label="reset_ready"):
+    """Back away from the side-arm target, then restore the high ready pose.
+
+    Stretch approaches work side-on, so chassis ``backward`` is perpendicular
+    to the arm and does not clear a refrigerator/cabinet opening. Retreat along
+    the direction opposite local -Y (the telescoping arm direction) instead.
+    As with Panda reset, scan down from the requested distance and retain the
+    largest collision-free straight motion.
+    """
+    retreat = float(retreat)
+    if retreat < 0.0:
+        raise ValueError("reset retreat must be non-negative")
+    if preserve_yaw is not True:
+        raise ValueError("Stretch reset currently requires preserve_yaw=true")
+
+    start = q_start.copy()
+    start_xy = rig.base_xy(start)
+    yaw = _stretch_root_yaw(start[rig.ROOT + 3:rig.ROOT + 7])
+    arm_direction = np.array([math.sin(yaw), -math.cos(yaw)])
+    valid = _robot_collision_checker(rig, start)
+    n_steps = max(2, int(round(retreat / RESET_RETREAT_STEP)) + 1)
+    chosen_retreat = 0.0
+    backed = start.copy()
+    for distance in np.linspace(retreat, 0.0, n_steps):
+        candidate = start.copy()
+        candidate[rig.ROOT:rig.ROOT + 2] = (
+            start_xy - float(distance) * arm_direction)
+        if distance <= 1e-6 or _qpos_edge_collision_free(
+                start, candidate, [rig.ROOT, rig.ROOT + 1],
+                [RESET_BASE_EDGE_RES, RESET_BASE_EDGE_RES], valid):
+            chosen_retreat = float(distance)
+            backed = candidate
+            break
+
+    retracted = backed.copy()
+    _set_stretch_extension(rig, retracted, 0.0)
+    ready = retracted.copy()
+    rig.apply_ready(ready)
+    rig.set_fingers(ready, rig.finger_open)
+    track, final_q = _build_stretch_joint_track(
+        rig, label, [start, backed, retracted, ready],
+        [max(0.2, chosen_retreat / BASE_SPEED), 0.7, 0.8],
+        ["reset_retreat", "reset_retract", "reset_ready"])
+    track["meta"].update({
+        "retreat_distance": chosen_retreat,
+        "preserve_yaw": True,
+        "yaw_change": 0.0,
+        "reset_collision_free": True,
+    })
+    return track, final_q
+
+
+def gen_stretch_wait(rig, q_start, duration, carrying=None):
+    """Hold Stretch and any grasped object stationary for ``duration``."""
+    duration = float(duration)
+    if duration < 0.0:
+        raise ValueError("wait duration must be non-negative")
+    return _build_stretch_joint_track(
+        rig, "wait", [q_start.copy(), q_start.copy()], [duration],
+        ["wait"], carrying=carrying)
+
+
+STRETCH_MIN_GRASP_HEIGHT_ABOVE_SUPPORT = 0.034
+
+
+def gen_stretch_pick(rig, q_start, obj_name, label=None,
+                     post_grasp_lift=0.08, grasp_height_offset=None):
+    """Pick one object with Stretch's side-on lift/telescope mechanism."""
+    label = label or f"pick_{obj_name}"
+    object_address = rig.jadr(_obj_joint(obj_name))
+    static_pose = (
+        q_start[object_address:object_address + 3].copy(),
+        q_start[object_address + 3:object_address + 7].copy(),
+    )
+    if grasp_height_offset is None:
+        # Keep the rubber fingertips above the support surface for short
+        # objects. The orange sits ~8 mm lower than the apple; grasping both
+        # exactly at their body origin makes the tips scrape the countertop.
+        grasp_height_offset = max(
+            0.0,
+            STRETCH_MIN_GRASP_HEIGHT_ABOVE_SUPPORT
+            - _rest_support_clearance(rig, obj_name),
+        )
+    target_pos = static_pose[0] + [0.0, 0.0, float(grasp_height_offset)]
+    grasp_closed, solution = _stretch_grasp_solution(
+        rig, q_start, target_pos)
+
+    start = q_start.copy()
+    opened = start.copy()
+    _set_stretch_grip(rig, opened, 0.04)
+    wrist_aligned = opened.copy()
+    wrist_aligned[rig.WRIST] = solution["wrist_yaw"]
+    lowered = wrist_aligned.copy()
+    lowered[rig.TORSO] = solution["lift"]
+    pregrasp = lowered.copy()
+    pregrasp_extension = max(0.0, solution["total_extension"] - 0.04)
+    _set_stretch_extension(rig, pregrasp, pregrasp_extension)
+    grasp_open = pregrasp.copy()
+    _set_stretch_extension(rig, grasp_open, solution["total_extension"])
+    grasp_closed = grasp_open.copy()
+    _set_stretch_grip(rig, grasp_closed, solution["closed_slide"])
+
+    off_pos, off_quat = _grasp_offset(rig, obj_name, grasp_closed)
+    lifted = grasp_closed.copy()
+    lifted[rig.TORSO] = min(
+        rig.ready_lift, solution["lift"] + float(post_grasp_lift))
+    retracted = lifted.copy()
+    _set_stretch_extension(rig, retracted, 0.0)
+    ready = retracted.copy()
+    ready[rig.TORSO] = rig.ready_lift
+
+    waypoints = [
+        start, opened, wrist_aligned, lowered, pregrasp,
+        grasp_open, grasp_closed, lifted, retracted, ready,
+    ]
+    durations = [0.4, 0.35, 0.8, 0.8, 0.35, 0.55, 0.45, 1.0, 0.45]
+    phases = [
+        "pick_open_gripper", "pick_align_wrist", "pick_lower_lift",
+        "pick_preextend", "pick_final_approach", "pick_close_gripper",
+        "pick_lift_clear", "pick_retract", "pick_return_ready",
+    ]
+    track = _build_stretch_object_track(
+        rig, label, waypoints, durations, phases, obj_name,
+        attach_from_segment=6, off_pos=off_pos, off_quat=off_quat,
+        static_pose=static_pose)
+    track["meta"]["grasp_solution"] = {
+        key: round(float(value), 6) for key, value in solution.items()
+    }
+    track["meta"]["post_grasp_lift"] = float(post_grasp_lift)
+    track["meta"]["grasp_height_offset"] = float(grasp_height_offset)
+    return track, ready, (off_pos, off_quat)
+
+
+STRETCH_PLACE_WRIST_SEARCH_LIMIT = 0.75
+STRETCH_PLACE_WRIST_PREFERRED_LIMIT = 0.35
+STRETCH_PLACE_MAX_ERROR = 0.025
+STRETCH_FRONT_PLACE_INSET = 0.04
+
+
+def _stretch_place_solution(rig, q_start, target_obj_pos, off):
+    """Solve lift/telescope/wrist so the carried object reaches a target."""
+    target_obj_pos = np.asarray(target_obj_pos, dtype=float)
+    off_pos, off_quat = off
+    arm_joint = mujoco.mj_name2id(
+        rig.model, mujoco.mjtObj.mjOBJ_JOINT,
+        rig.descriptor["joints"]["arm"][0])
+    arm_total_max = float(rig.model.jnt_range[arm_joint, 1]) * len(rig.ARM)
+    lift_joint = mujoco.mj_name2id(
+        rig.model, mujoco.mjtObj.mjOBJ_JOINT,
+        rig.descriptor["joints"]["lift"][0])
+    lift_min, lift_max = map(float, rig.model.jnt_range[lift_joint])
+    wrist_joint = mujoco.mj_name2id(
+        rig.model, mujoco.mjtObj.mjOBJ_JOINT,
+        rig.descriptor["joints"]["wrist"][0])
+    wrist_min, wrist_max = map(float, rig.model.jnt_range[wrist_joint])
+
+    def solve_window(limit):
+        best = None
+        low = max(wrist_min, -limit)
+        high = min(wrist_max, limit)
+        sample_count = max(2, int(round((high - low) / 0.005)) + 1)
+        for wrist in np.linspace(low, high, sample_count):
+            probe = q_start.copy()
+            probe[rig.WRIST] = float(wrist)
+            probe[rig.TORSO] = 0.0
+            _set_stretch_extension(rig, probe, 0.0)
+            origin, _ = _carried_pose(rig, probe, off_pos, off_quat)
+
+            extended = probe.copy()
+            trial_extension = min(0.04, arm_total_max)
+            _set_stretch_extension(rig, extended, trial_extension)
+            moved, _ = _carried_pose(rig, extended, off_pos, off_quat)
+            arm_direction = (moved - origin) / trial_extension
+            extension = float(np.dot(target_obj_pos - origin, arm_direction))
+            extension = min(max(extension, 0.0), arm_total_max)
+            lift = min(max(
+                float(target_obj_pos[2] - origin[2]), lift_min), lift_max)
+
+            solved = probe.copy()
+            solved[rig.TORSO] = lift
+            _set_stretch_extension(rig, solved, extension)
+            actual, _ = _carried_pose(rig, solved, off_pos, off_quat)
+            error = float(np.linalg.norm(actual - target_obj_pos))
+            score = error + 0.002 * abs(float(wrist - q_start[rig.WRIST]))
+            if best is None or score < best[0]:
+                best = (
+                    score, solved, error, extension, lift, float(wrist), limit)
+        return best
+
+    # Preserve the visually accepted narrow-window posture whenever it is
+    # feasible. Only expand for an otherwise false-unreachable target such as
+    # the single apple fridge slot (25.6 mm in the preferred window, <1 mm at
+    # 0.49 rad). This avoids perturbing existing orange and drop-in releases.
+    best = solve_window(STRETCH_PLACE_WRIST_PREFERRED_LIMIT)
+    if best[2] > STRETCH_PLACE_MAX_ERROR:
+        best = solve_window(STRETCH_PLACE_WRIST_SEARCH_LIMIT)
+
+    _, placed_q, error, extension, lift, wrist, search_limit = best
+    if error > STRETCH_PLACE_MAX_ERROR:
+        raise ValueError(
+            "Stretch place is unreachable: carried-object error "
+            f"{error:.3f}m exceeds {STRETCH_PLACE_MAX_ERROR:.3f}m")
+    return placed_q, {
+        "object_error": error,
+        "total_extension": extension,
+        "lift": lift,
+        "wrist_yaw": wrist,
+        "wrist_search_limit": search_limit,
+    }
+
+
+def gen_stretch_place(rig, q_start, obj_name, dest_xyz, off, label=None,
+                      release_clearance=0.04):
+    """Place a held object with a horizontal Stretch reach and clean release."""
+    label = label or f"place_{obj_name}"
+    surface_target = np.asarray(dest_xyz, dtype=float)
+    desired_obj = surface_target.copy()
+    desired_obj[2] += (
+        _rest_support_clearance(rig, obj_name) + float(release_clearance))
+    placed, solution = _stretch_place_solution(
+        rig, q_start, desired_obj, off)
+
+    start = q_start.copy()
+    _set_stretch_grip(rig, start, 0.004)
+    wrist_aligned = start.copy()
+    wrist_aligned[rig.WRIST] = solution["wrist_yaw"]
+    lowered = wrist_aligned.copy()
+    lowered[rig.TORSO] = solution["lift"]
+    preplace = lowered.copy()
+    preplace_extension = max(0.0, solution["total_extension"] - 0.04)
+    _set_stretch_extension(rig, preplace, preplace_extension)
+    at_target = preplace.copy()
+    _set_stretch_extension(rig, at_target, solution["total_extension"])
+    opened = at_target.copy()
+    _set_stretch_grip(rig, opened, 0.04)
+
+    # Detach at the first opening frame. Stretch's finger linkage is not
+    # perfectly symmetric around the rubber-tip midpoint, so slaving the
+    # object throughout jaw opening would drag it sideways by ~1.7 cm.
+    release_pose = _carried_pose(rig, at_target, off[0], off[1])
+    release_pose = _upright_release_pose(
+        release_pose, _rest_obj_pose(rig, obj_name)[1])
+    clear = opened.copy()
+    _set_stretch_extension(rig, clear, preplace_extension)
+    retracted = clear.copy()
+    _set_stretch_extension(rig, retracted, 0.0)
+    ready = retracted.copy()
+    ready[rig.TORSO] = rig.ready_lift
+
+    waypoints = [
+        start, wrist_aligned, lowered, preplace, at_target,
+        opened, clear, retracted, ready,
+    ]
+    durations = [0.35, 0.8, 0.8, 0.45, 0.45, 0.4, 0.8, 0.8]
+    phases = [
+        "place_align_wrist", "place_lower_lift", "place_preextend",
+        "place_final_approach", "place_open_gripper",
+        "place_release_clear", "place_retract", "place_return_ready",
+    ]
+    track = _build_stretch_object_track(
+        rig, label, waypoints, durations, phases, obj_name,
+        attach_from_segment=0, detach_from_segment=4,
+        off_pos=off[0], off_quat=off[1], static_pose=release_pose)
+    track["meta"].update({
+        "place_solution": {
+            key: round(float(value), 6) for key, value in solution.items()
+        },
+        "surface_target": [float(value) for value in surface_target],
+        "desired_object_center": [float(value) for value in desired_obj],
+        "release_clearance": float(release_clearance),
+    })
+    object_address = rig.jadr(_obj_joint(obj_name))
+    ready[object_address:object_address + 3] = release_pose[0]
+    ready[object_address + 3:object_address + 7] = release_pose[1]
+    return track, ready
+
+
+def gen_stretch_drop_into(
+        rig, q_start, obj_name, dest_xyz, off, label=None,
+        release_height_above_support=0.20):
+    """Release a held object above a top opening for physical settling."""
+    label = label or f"drop_into_{obj_name}"
+    support_target = np.asarray(dest_xyz, dtype=float)
+    release_target = support_target.copy()
+    release_target[2] += float(release_height_above_support)
+    placed, solution = _stretch_place_solution(
+        rig, q_start, release_target, off)
+
+    start = q_start.copy()
+    _set_stretch_grip(rig, start, 0.004)
+    wrist_aligned = start.copy()
+    wrist_aligned[rig.WRIST] = solution["wrist_yaw"]
+    release_height = wrist_aligned.copy()
+    release_height[rig.TORSO] = solution["lift"]
+    predrop = release_height.copy()
+    predrop_extension = max(0.0, solution["total_extension"] - 0.05)
+    _set_stretch_extension(rig, predrop, predrop_extension)
+    at_opening = predrop.copy()
+    _set_stretch_extension(rig, at_opening, solution["total_extension"])
+    opened = at_opening.copy()
+    _set_stretch_grip(rig, opened, 0.04)
+    # Keep the object kinematically attached throughout jaw opening. Releasing
+    # on the first opening frame starts physics while the fingers still
+    # intersect non-convex objects such as cups, and the contact solver can
+    # eject them from the container. The first detached frame is the start of
+    # the following clearance segment, after the gripper is fully open.
+    release_pose = _carried_pose(rig, opened, off[0], off[1])
+    release_pose = _upright_release_pose(
+        release_pose, _rest_obj_pose(rig, obj_name)[1])
+    clear = opened.copy()
+    _set_stretch_extension(rig, clear, predrop_extension)
+    retracted = clear.copy()
+    _set_stretch_extension(rig, retracted, 0.0)
+    ready = retracted.copy()
+    ready[rig.TORSO] = rig.ready_lift
+
+    waypoints = [
+        start, wrist_aligned, release_height, predrop, at_opening,
+        opened, clear, retracted, ready,
+    ]
+    durations = [0.35, 0.7, 0.8, 0.45, 0.45, 0.4, 0.8, 0.8]
+    phases = [
+        "drop_align_wrist", "drop_set_release_height", "drop_preextend",
+        "drop_final_approach", "drop_open_gripper", "drop_release_clear",
+        "drop_retract", "drop_return_ready",
+    ]
+    track = _build_stretch_object_track(
+        rig, label, waypoints, durations, phases, obj_name,
+        attach_from_segment=0, detach_from_segment=5,
+        off_pos=off[0], off_quat=off[1], static_pose=release_pose)
+    track["meta"].update({
+        "place_strategy": "drop_into",
+        "drop_solution": {
+            key: round(float(value), 6) for key, value in solution.items()
+        },
+        "support_target": [float(value) for value in support_target],
+        "release_target": [float(value) for value in release_target],
+        "release_height_above_support": float(
+            release_height_above_support),
+    })
+    object_address = rig.jadr(_obj_joint(obj_name))
+    ready[object_address:object_address + 3] = release_pose[0]
+    ready[object_address + 3:object_address + 7] = release_pose[1]
+    return track, ready
+
+
+def compile_stretch_robot(rig, robot_name, steps, standoffs, tracks_dir,
+                          facilities, close_to_open=None, reverse_always=None,
+                          context=None, shared_world=None, next_step=None,
+                          placement_regions=None):
+    """Compile the currently accepted Stretch primitive set.
+
+    Unsupported operations fail at the morphology boundary with the exact op
+    in the message; they can be enabled here independently as M2 progresses.
+    """
+    context = context or _new_robot_compile_context(rig)
+    q = context["q"].copy()
+    held = context.get("held")
+    off = context.get("off")
+    items = []
+    label_counts = context["label_counts"]
+    placement_regions = (
+        PLACEMENT_REGIONS if placement_regions is None else placement_regions)
+    resting = (
+        shared_world["resting"] if shared_world is not None
+        else context["resting"])
+    for index, step in enumerate(steps):
+        q = _overlay_shared_world(rig, q, shared_world, held)
+        op = step["op"]
+        target = None
+        facility = None
+        item_object = None
+        place_xyz = None
+        if op == "navigate":
+            target = step.get("target")
+            if target is None:
+                override = step.get("standoff")
+                if override is None or len(override) < 2:
+                    raise ValueError(
+                        "Stretch navigate requires a target or explicit standoff")
+                face = step.get("face_xy", override)
+                destination = {
+                    "standoff_xy": [float(override[0]), float(override[1])],
+                    "face_xy": [float(face[0]), float(face[1])],
+                }
+            else:
+                if target not in standoffs:
+                    raise ValueError(
+                        f"Stretch navigate target '{target}' has no standoff")
+                destination = dict(standoffs[target])
+                override = step.get("standoff")
+                if override is not None and len(override) >= 2:
+                    destination["standoff_xy"] = [
+                        float(override[0]), float(override[1])]
+                following_step = (
+                    steps[index + 1]
+                    if index + 1 < len(steps)
+                    else next_step
+                )
+                if (
+                    override is None
+                    and target in placement_regions
+                    and isinstance(following_step, dict)
+                    and following_step.get("op") == "place"
+                    and following_step.get("dest") == target
+                ):
+                    # Stretch's side arm has no shoulder DOF for a large
+                    # lateral correction. Align its final stance to the exact
+                    # selected slot (not the facility's generic centre) while
+                    # preserving the accepted approach side and reach length.
+                    place_target = dest_point(
+                        rig, target, q,
+                        following_step.get("_slot", 0),
+                        following_step.get("_slot_count", 1),
+                        following_step.get("at"),
+                        following_step.get("at_anchor"),
+                        placement_regions,
+                        object_name=following_step.get("object", held),
+                    )
+                    old_goal = np.asarray(
+                        destination["standoff_xy"], dtype=float)[:2]
+                    old_face = np.asarray(
+                        destination["face_xy"], dtype=float)[:2]
+                    away = old_goal - old_face
+                    reach = float(np.linalg.norm(away))
+                    if reach > 1e-6:
+                        slot_xy = np.asarray(place_target[:2], dtype=float)
+                        region = placement_regions[target]
+                        if region.get("kind", "surface") == "surface":
+                            center = np.asarray(
+                                region.get("center", [*slot_xy, place_target[2]])[:2],
+                                dtype=float,
+                            )
+                            half = np.maximum(
+                                np.asarray(region.get("half", [1.0, 1.0]), dtype=float),
+                                1e-6,
+                            )
+                            normalized = (slot_xy - center) / half
+                            axis = int(np.argmax(np.abs(normalized)))
+                            sign = 1.0 if normalized[axis] >= 0.0 else -1.0
+                            away = np.zeros(2, dtype=float)
+                            away[axis] = sign * reach
+                        elif region.get("access") == "front":
+                            strategy = (
+                                (region.get("robot_strategies") or {})
+                                .get(STRETCH) or {})
+                            inset = float(strategy.get(
+                                "target_inset", STRETCH_FRONT_PLACE_INSET))
+                            slot_xy -= away / reach * inset
+                        destination["standoff_xy"] = (
+                            slot_xy + away / reach * reach).tolist()
+                        destination["face_xy"] = slot_xy.tolist()
+            base_label = (
+                f"navigate_{held}_to_{target or 'rest'}"
+                if held else f"navigate_{target or 'rest'}"
+            )
+            count = label_counts.get(base_label, 0) + 1
+            label_counts[base_label] = count
+            label = base_label if count == 1 else f"{base_label}__{count}"
+            carrying = _carry(rig, held, off) if held else None
+            track, q = gen_stretch_navigate(
+                rig, q, destination, carrying=carrying, label=label,
+                via_points=step.get("via_points", step.get("waypoints")))
+            facility = target if target in facilities else None
+            item_object = held
+        elif op == "pick":
+            item_object = step["object"]
+            if held is not None:
+                raise ValueError(
+                    f"robot '{robot_name}' already holds '{held}' and cannot "
+                    f"pick '{item_object}'")
+            held_by = shared_world["held_by"] if shared_world is not None else {}
+            owner = held_by.get(item_object)
+            if owner is not None and owner != robot_name:
+                raise ValueError(
+                    f"object '{item_object}' is already held by {owner}")
+            base_label = f"pick_{item_object}"
+            count = label_counts.get(base_label, 0) + 1
+            label_counts[base_label] = count
+            label = base_label if count == 1 else f"{base_label}__{count}"
+            track, q, off = gen_stretch_pick(
+                rig, q, item_object, label=label,
+                post_grasp_lift=step.get("post_grasp_lift", 0.08),
+                grasp_height_offset=step.get("grasp_height_offset"))
+            held = item_object
+            if shared_world is not None:
+                shared_world["held_by"][item_object] = robot_name
+        elif op == "place":
+            item_object = step.get("object", held)
+            facility = step.get("dest")
+            if held != item_object:
+                raise ValueError(
+                    f"{robot_name} cannot place '{item_object}'; "
+                    f"currently holding {held!r}")
+            if facility not in placement_regions:
+                raise ValueError(
+                    f"Stretch place destination '{facility}' has no "
+                    "placement region")
+            region = placement_regions[facility]
+            strategy_config = (
+                (region.get("robot_strategies") or {}).get(STRETCH) or {})
+            strategy = strategy_config.get("type")
+            if strategy is None and (
+                region.get("kind", "surface") == "surface"
+                or region.get("access", "top") == "front"
+            ):
+                strategy = "front"
+            if strategy not in {"front", "drop_into"}:
+                raise ValueError(
+                    f"Stretch place destination '{facility}' has no supported "
+                    "front or drop_into strategy")
+            destination_point = dest_point(
+                rig, facility, q, step.get("_slot", 0),
+                step.get("_slot_count", 1), step.get("at"),
+                step.get("at_anchor"), placement_regions,
+                object_name=item_object)
+            if strategy == "front":
+                toward_base = rig.base_xy(q) - destination_point[:2]
+                distance_to_base = float(np.linalg.norm(toward_base))
+                if distance_to_base > 1e-6:
+                    default_inset = (
+                        0.0
+                        if region.get("kind", "surface") == "surface"
+                        else STRETCH_FRONT_PLACE_INSET
+                    )
+                    inset = float(strategy_config.get(
+                        "target_inset", default_inset))
+                    destination_point[:2] -= (
+                        toward_base / distance_to_base * inset)
+            place_xyz = [round(float(value), 6)
+                         for value in destination_point]
+            base_label = f"place_{item_object}_{facility}"
+            count = label_counts.get(base_label, 0) + 1
+            label_counts[base_label] = count
+            label = base_label if count == 1 else f"{base_label}__{count}"
+            if strategy == "front":
+                track, q = gen_stretch_place(
+                    rig, q, item_object, destination_point, off, label=label,
+                    release_clearance=region.get("release_clearance", 0.04))
+            else:
+                track, q = gen_stretch_drop_into(
+                    rig, q, item_object, destination_point, off, label=label,
+                    release_height_above_support=strategy_config.get(
+                        "release_height_above_support", 0.20))
+            held, off = None, None
+            if shared_world is not None:
+                shared_world["held_by"].pop(item_object, None)
+            if region.get("kind") == "container":
+                release_frame = None
+                if strategy == "drop_into":
+                    release_frame = next(
+                        (frame_index for frame_index, phase in
+                         enumerate(track["phase"])
+                         if phase == "drop_release_clear"),
+                        None)
+                    if release_frame is None:
+                        raise ValueError(
+                            "Stretch drop_into track has no gripper release "
+                            "frame")
+                object_frame = (
+                    release_frame if release_frame is not None
+                    else -1)
+                last = track["channels"][_obj_joint(item_object)][
+                    object_frame]
+                settling_objects = dict(resting.get(facility, {}))
+                settling_objects[item_object] = (
+                    np.asarray(last[:3], dtype=float),
+                    np.asarray(last[3:7], dtype=float),
+                )
+                if release_frame is None:
+                    frames, settled_objects = _settle_objects_physically(
+                        rig, q, settling_objects,
+                        settle_time=strategy_config.get("settle_time", 0.4))
+                    _extend_track_with_settle_objects(track, frames)
+                else:
+                    settled_objects = _replay_stretch_release_physically(
+                        rig, q, track, settling_objects, release_frame)
+                resting[facility] = settled_objects
+                for resting_obj, (settled_pos, settled_quat) in (
+                        settled_objects.items()):
+                    object_address = rig.jadr(_obj_joint(resting_obj))
+                    q[object_address:object_address + 7] = [
+                        *settled_pos, *settled_quat]
+                if strategy == "drop_into":
+                    settled_pos = settled_objects[item_object][0]
+                    max_xy_drift = float(
+                        strategy_config.get("max_xy_drift", 0.15))
+                    xy_drift = float(np.linalg.norm(
+                        settled_pos[:2] - destination_point[:2]))
+                    if xy_drift > max_xy_drift:
+                        raise ValueError(
+                            f"Stretch drop_into '{facility}' escaped the "
+                            f"target opening: xy drift {xy_drift:.3f}m exceeds "
+                            f"{max_xy_drift:.3f}m")
+                    if float(settled_pos[2]) < float(destination_point[2]) - 0.03:
+                        raise ValueError(
+                            f"Stretch drop_into '{facility}' fell below its "
+                            "configured support surface")
+                    track["meta"]["drop_validation"] = {
+                        "settled": True,
+                        "xy_drift": xy_drift,
+                        "settled_xyz": [float(value) for value in settled_pos],
+                    }
+        elif op == "reset":
+            if held is not None:
+                raise ValueError(
+                    f"reset requires an empty gripper; currently holding '{held}'")
+            base_label = "reset_ready"
+            count = label_counts.get(base_label, 0) + 1
+            label_counts[base_label] = count
+            label = base_label if count == 1 else f"{base_label}__{count}"
+            track, q = gen_stretch_reset(
+                rig, q,
+                retreat=step.get("retreat", RESET_RETREAT_DEFAULT),
+                preserve_yaw=step.get("preserve_yaw", True),
+                label=label)
+        elif op == "wait":
+            carrying = _carry(rig, held, off) if held else None
+            base_label = "wait"
+            count = label_counts.get(base_label, 0) + 1
+            label_counts[base_label] = count
+            label = base_label if count == 1 else f"{base_label}__{count}"
+            track, q = gen_stretch_wait(
+                rig, q, step["duration"], carrying=carrying)
+            track["meta"]["skill"] = label
+            item_object = held
+        else:
+            raise ValueError(
+                f"robot '{robot_name}' (stretch) does not yet support op '{op}'")
+
+        _commit_shared_world(rig, q, shared_world, held)
+        base_xy = [round(float(value), 6) for value in rig.base_xy(q)]
+        completed = dict(step)
+        completed.update({
+            "id": step.get("id", f"{robot_name}#{index}"),
+            "robot": robot_name,
+            "standoff": base_xy,
+        })
+        if op == "place":
+            completed["at"] = place_xyz
+        if op == "reset":
+            completed["retreat"] = track["meta"]["retreat_distance"]
+            completed["preserve_yaw"] = True
+        if op == "navigate":
+            completed.update({
+                "face_xy": [
+                    round(float(value), 6)
+                    for value in destination["face_xy"]],
+                "via_points": track["meta"]["via_points"],
+                "route": track["meta"]["route"],
+            })
+        root_frames = track["channels"][rig.root_joint_name]
+        base_trace = [
+            [float(t), float(root[0]), float(root[1])]
+            for t, root in zip(track["time"], root_frames)
+        ]
+        items.append({
+            "id": completed["id"],
+            "after": list(step.get("after", [])),
+            "robot": robot_name,
+            "order": int(step.get("_robot_order", index)),
+            "label": label,
+            "track": track,
+            "duration": round(track["meta"]["duration"], 3),
+            "group": step.get("group"),
+            "facility": facility,
+            "object": item_object,
+            "place_xyz": place_xyz,
+            "base_xy": base_xy,
+            "base_trace": base_trace,
+            "completed_step": completed,
+            "generated_track": True,
+        })
+    context.update({
+        "q": q, "held": held, "off": off,
+        "label_counts": label_counts, "resting": resting,
+    })
+    return items
+
+
+def get_robot_adapter(scene_xml, robot_id, manifest, ready=None, island=None):
+    """Create an execution adapter from manifest morphology, never robot id."""
+    descriptor = robot_descriptor(manifest, robot_id)
+    robot_type = descriptor["type"]
+    if descriptor.get("unsupported_missing_joints"):
+        raise UnsupportedRobotAdapterError(robot_id, robot_type)
+    if robot_type == STRETCH:
+        return StretchRobotAdapter(
+            scene_xml, robot_id, descriptor, island=island)
+    if robot_type != PANDAOMRON:
+        raise UnsupportedRobotAdapterError(robot_id, robot_type)
+    rig = get_rig(
+        scene_xml, int(descriptor["index"]), ready=ready, island=island)
+    return PandaOmronAdapter(rig, robot_id, descriptor)
 
 
 GENERATED_TRACK_DIR = "_generated"
@@ -6590,9 +7909,10 @@ def compile_one_step(
     """
     validate_step_world_precondition(step, shared_world, manifest)
 
-    return compile_robot(
-        rig, robot_name, [step], standoffs, tracks_dir, facilities,
-        close_to_open, reverse_always,
+    return rig.compile_steps(
+        robot_name, [step], standoffs=standoffs, tracks_dir=tracks_dir,
+        facilities=facilities, close_to_open=close_to_open,
+        reverse_always=reverse_always,
         context=context,
         shared_world=shared_world,
         next_step=next_step,
@@ -6653,6 +7973,7 @@ def compile_plan_v2(
     standoffs = load_standoffs(standoffs_path)
     island = json.loads(Path(standoffs_path).read_text("utf-8"))["island_bbox"]
     manifest = json.loads(Path(manifest_path).read_text("utf-8"))
+    require_plan_assignments(manifest, plans)
     skill_robots = {
         skill["name"]: set(skill.get("robots") or [])
         for skill in manifest.get("skills", [])
@@ -6779,8 +8100,8 @@ def compile_plan_v2(
         progress_callback(len(commit_order), total)
 
     rigs = {
-        robot: get_rig(
-            scene_xml, int(robot.replace("robot", "")), island=island)
+        robot: get_robot_adapter(
+            scene_xml, robot, manifest, island=island)
         for robot in plans
     }
     for rig in rigs.values():
@@ -7807,6 +9128,7 @@ def compile_plan(
     standoffs = load_standoffs(standoffs_path)
     island = json.loads(Path(standoffs_path).read_text("utf-8"))["island_bbox"]
     manifest = json.loads(Path(manifest_path).read_text("utf-8"))
+    require_plan_assignments(manifest, plans)
     facilities = {s["name"]: s.get("facility") for s in manifest["skills"]}
     facilities.update({name: name for name in manifest["facilities"]})
     placement_regions = placement_regions_from_manifest(manifest["facilities"])
@@ -7847,8 +9169,8 @@ def compile_plan(
 
     ordered_steps = _container_dependency_order(plans, manifest)
     rigs = {
-        robot_name: get_rig(
-            scene_xml, int(robot_name.replace("robot", "")), island=island)
+        robot_name: get_robot_adapter(
+            scene_xml, robot_name, manifest, island=island)
         for robot_name in plans
     }
     for rig in rigs.values():

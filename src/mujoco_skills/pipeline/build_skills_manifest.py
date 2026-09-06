@@ -55,7 +55,8 @@ from pathlib import Path
 import numpy as np
 import mujoco
 
-from mujoco_skills.model_signature import model_signature, robot_mounts
+from mujoco_skills.model_signature import model_signature
+from mujoco_skills.robot_descriptors import discover_robot_descriptors
 
 # Reused rather than reimplemented — real per-robot kinematics/search logic
 # that only a full SceneRig provides, not a simple geometry helper like
@@ -97,7 +98,7 @@ def load_scene_table(path: Path) -> dict:
 
 SCHEMA_VERSION = 2
 GENERATOR_NAME = "mujoco_skills.pipeline.build_skills_manifest"
-GENERATOR_VERSION = "2.1.0"
+GENERATOR_VERSION = "2.2.0"
 
 # Generic (scene-agnostic) container placement motion defaults, by access
 # mode. Anything scene-specific — a particular fridge's insertion depth, slot
@@ -125,6 +126,128 @@ CONTAINER_MOTION_KEYS = {
     "ik_eef_tolerance", "randomize_preinsert_first", "ik_top_down",
     "rrt_horizontal_ingress", "simple_ingress", "nearby_rrt_fallback",
 }
+
+DROP_INTO_KEYS = {
+    "type", "release_height_above_support", "settle_time", "max_xy_drift",
+}
+
+
+def _validate_robot_strategies(value, json_path: str, errors: list[str]):
+    """Validate morphology-specific placement strategy overrides."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        errors.append(f"{json_path}: expected an object keyed by robot type")
+        return None
+    normalized = {}
+    for robot_type, raw in value.items():
+        path = f"{json_path}.{robot_type}"
+        if not isinstance(raw, dict):
+            errors.append(f"{path}: expected an object")
+            continue
+        unknown = sorted(set(raw) - DROP_INTO_KEYS)
+        if unknown:
+            errors.append(f"{path}: unknown key(s) {unknown}")
+        strategy_type = raw.get("type")
+        if strategy_type != "drop_into":
+            errors.append(
+                f"{path}.type: expected 'drop_into', got {strategy_type!r}")
+            continue
+        strategy = {"type": "drop_into"}
+        for key, default in (
+                ("release_height_above_support", 0.20),
+                ("settle_time", 0.5),
+                ("max_xy_drift", 0.15)):
+            try:
+                number = float(raw.get(key, default))
+            except (TypeError, ValueError):
+                errors.append(f"{path}.{key}: expected a positive number")
+                continue
+            if number <= 0:
+                errors.append(f"{path}.{key}: expected a positive number")
+                continue
+            strategy[key] = number
+        normalized[str(robot_type)] = strategy
+    return normalized
+
+
+def _validate_reachability(value, json_path: str, robot_ids,
+                           errors: list[str]):
+    """Validate optional scene-specific robot eligibility metadata.
+
+    Absence is deliberately preserved for legacy manifests, where consumers
+    interpret it as unrestricted. Once ``reachable_by`` is declared, every
+    excluded robot must carry a machine-readable reason so NL and timeline
+    edits can eventually explain the same backend decision.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        errors.append(f"{json_path}: expected an object")
+        return None
+    allowed = {"reachable_by", "unreachable"}
+    unknown = sorted(set(value) - allowed)
+    if unknown:
+        errors.append(f"{json_path}: unknown key(s) {unknown}")
+
+    reachable = value.get("reachable_by")
+    if not isinstance(reachable, list) or not reachable:
+        errors.append(f"{json_path}.reachable_by: expected a non-empty list")
+        return None
+    if any(not isinstance(robot, str) for robot in reachable):
+        errors.append(f"{json_path}.reachable_by: robot ids must be strings")
+        return None
+    if len(set(reachable)) != len(reachable):
+        errors.append(f"{json_path}.reachable_by: duplicate robot id")
+    known_robots = set(robot_ids)
+    for robot in reachable:
+        if robot not in known_robots:
+            errors.append(
+                f"{json_path}.reachable_by: unknown robot '{robot}'")
+
+    raw_unreachable = value.get("unreachable", {})
+    if not isinstance(raw_unreachable, dict):
+        errors.append(f"{json_path}.unreachable: expected an object")
+        return None
+    normalized_unreachable = {}
+    for robot, reason in raw_unreachable.items():
+        reason_path = f"{json_path}.unreachable.{robot}"
+        if robot not in known_robots:
+            errors.append(f"{reason_path}: unknown robot '{robot}'")
+            continue
+        if robot in reachable:
+            errors.append(
+                f"{reason_path}: robot is also listed in reachable_by")
+            continue
+        if not isinstance(reason, dict):
+            errors.append(f"{reason_path}: expected an object")
+            continue
+        reason_unknown = sorted(set(reason) - {"code", "details"})
+        if reason_unknown:
+            errors.append(f"{reason_path}: unknown key(s) {reason_unknown}")
+        code = reason.get("code")
+        if not isinstance(code, str) or not code.strip():
+            errors.append(f"{reason_path}.code: expected a non-empty string")
+            continue
+        details = reason.get("details", {})
+        if not isinstance(details, dict):
+            errors.append(f"{reason_path}.details: expected an object")
+            continue
+        normalized_unreachable[robot] = {
+            "code": code.strip(),
+            **({"details": details} if details else {}),
+        }
+
+    excluded = known_robots - set(reachable)
+    missing_reasons = sorted(excluded - set(raw_unreachable))
+    if missing_reasons:
+        errors.append(
+            f"{json_path}.unreachable: missing reason(s) for "
+            f"{missing_reasons}")
+    return {
+        "reachable_by": sorted(set(reachable)),
+        "unreachable": normalized_unreachable,
+    }
 
 
 def _validate_slot_points(value, json_path: str, errors: list[str]):
@@ -204,45 +327,8 @@ def _sha256_file(path: Path) -> str:
 
 
 def _build_robots(model) -> dict:
-    """Generated robot definitions: names validated against the model."""
-    def jid(name):
-        return mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
-
-    robots = {}
-    mounts = robot_mounts(model)
-    for mount_body, mount in sorted(mounts.items()):
-        idx = int(mount_body.replace("robot", "").replace("_base", ""))
-        arm = [f"robot{idx}_joint{i}" for i in range(1, 8)]
-        fingers = [f"gripper{idx}_right_finger_joint1", f"gripper{idx}_right_finger_joint2"]
-        base = [f"mobilebase{idx}_joint_mobile_forward",
-                f"mobilebase{idx}_joint_mobile_side",
-                f"mobilebase{idx}_joint_mobile_yaw"]
-        torso = f"mobilebase{idx}_joint_torso_height"
-        required = arm + fingers + base + [torso]
-        missing = [n for n in required if jid(n) < 0]
-        if missing:
-            # not a mobile manipulator we know how to drive; record and skip
-            robots[f"robot{idx}"] = {"index": idx, "unsupported_missing_joints": missing}
-            continue
-        f1, f2 = (model.jnt_range[jid(n)] for n in fingers)
-        robots[f"robot{idx}"] = {
-            "index": idx,
-            "type": "pandaomron",
-            "base_body": mount_body,
-            "mobile_base_body": f"mobilebase{idx}_base",
-            "mount": mount,
-            "arm_joints": arm,
-            "torso_joint": torso,
-            "finger_joints": fingers,
-            "base_joints": base,
-            "gripper": {
-                "open": [float(f1[1]), float(f2[0])],
-                "closed": [0.0, 0.0],
-                "ranges": [[float(f1[0]), float(f1[1])], [float(f2[0]), float(f2[1])]],
-            },
-            "footprint": {"base_clear": 0.35},
-        }
-    return robots
+    """Generate morphology-aware robot descriptors from model structure."""
+    return discover_robot_descriptors(model)
 
 
 # --- generic body/geom geometry helpers -------------------------------------
@@ -409,6 +495,7 @@ def build_manifest(scene_xml: Path, tracks_dir: Path, scene_table_path: Path,
     scene_table = load_scene_table(scene_table_path)
     model = mujoco.MjModel.from_xml_path(str(scene_xml))
     data = mujoco.MjData(model)
+    robots = _build_robots(model)
 
     init_keyframe = None
     for k in range(model.nkey):
@@ -758,6 +845,18 @@ def build_manifest(scene_xml: Path, tracks_dir: Path, scene_table_path: Path,
                         normalized_pick["grasp_offset"] = normalized_grasp_offset
                     if normalized_ready_torso is not None:
                         normalized_pick["ready_torso"] = normalized_ready_torso
+                reachability_input = {
+                    key: pick_cfg[key]
+                    for key in ("reachable_by", "unreachable")
+                    if key in pick_cfg
+                }
+                if reachability_input:
+                    reachability = _validate_reachability(
+                        reachability_input, f"objects.{name}.pick",
+                        robots, validation_errors)
+                    if reachability is not None:
+                        normalized_pick = normalized_pick or {}
+                        normalized_pick.update(reachability)
         objects_out[name] = {
             "label": spec.get("label", name),
             "body": spec["body"],
@@ -775,6 +874,17 @@ def build_manifest(scene_xml: Path, tracks_dir: Path, scene_table_path: Path,
         place = None
         place_cfg = spec.get("place")
         if place_cfg is not None:
+            reachability_input = {
+                key: place_cfg[key]
+                for key in ("reachable_by", "unreachable")
+                if key in place_cfg
+            }
+            reachability = (
+                _validate_reachability(
+                    reachability_input, f"facilities.{name}.place",
+                    robots, validation_errors)
+                if reachability_input else None
+            )
             kind = place_cfg.get("kind", "surface")
             slot_points = _validate_slot_points(
                 place_cfg.get("slot_points"),
@@ -804,6 +914,11 @@ def build_manifest(scene_xml: Path, tracks_dir: Path, scene_table_path: Path,
                         f"facilities.{name}.place.motion: unknown motion "
                         f"override key(s) {unknown}")
                 motion = {**CONTAINER_MOTION_DEFAULTS.get(access, {}), **overrides}
+                robot_strategies = _validate_robot_strategies(
+                    place_cfg.get("robot_strategies"),
+                    f"facilities.{name}.place.robot_strategies",
+                    validation_errors,
+                )
                 place = {
                     "kind": "container",
                     "access": access,
@@ -819,6 +934,9 @@ def build_manifest(scene_xml: Path, tracks_dir: Path, scene_table_path: Path,
                     **({"slot_points": slot_points} if slot_points is not None else {}),
                     **({"object_slot_points": object_slot_points}
                        if object_slot_points is not None else {}),
+                    **({"robot_strategies": robot_strategies}
+                       if robot_strategies is not None else {}),
+                    **(reachability or {}),
                     **motion,
                     "provenance": {
                         "motion_overrides": sorted(overrides),
@@ -842,6 +960,7 @@ def build_manifest(scene_xml: Path, tracks_dir: Path, scene_table_path: Path,
                     **({"slot_points": slot_points} if slot_points is not None else {}),
                     **({"object_slot_points": object_slot_points}
                        if object_slot_points is not None else {}),
+                    **(reachability or {}),
                 }
                 _require_body(f"facilities.{name}.place.surface_body",
                               place_cfg["surface_body"])
@@ -968,7 +1087,7 @@ def build_manifest(scene_xml: Path, tracks_dir: Path, scene_table_path: Path,
             "coordinate_frame": "world",
             "units": {"length": "meter", "angle": "radian"},
         },
-        "robots": _build_robots(model),
+        "robots": robots,
         "objects": objects_out,
         "facilities": facilities_out,
         "ops": OPS,

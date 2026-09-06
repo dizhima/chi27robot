@@ -64,7 +64,7 @@ CLASSIFY_TOOL = _classify_tool(INTENTS)
 COMPOUND_CLASSIFY_TOOL = _classify_tool(COMPOUND_INTENTS)
 
 CLASSIFY_PROMPT = (
-    "You are an intent classifier for a two-robot task-plan editor. Classify "
+    "You are an intent classifier for a multi-robot task-plan editor. Classify "
     "the user's latest message by their GOAL, not by surface wording, into "
     "exactly one of three workflows:\n"
     "- 'author': the user wants to CHANGE plan tasks -- add/remove/move an "
@@ -100,7 +100,7 @@ CLASSIFY_PROMPT = (
 )
 
 COMPOUND_CLASSIFY_PROMPT = (
-    "You are an intent classifier for a two-robot task-plan editor. Classify "
+    "You are an intent classifier for a multi-robot task-plan editor. Classify "
     "the user's latest message by their GOAL, not by surface wording, into "
     "exactly one of two workflows:\n"
     "- 'author': the user wants to CHANGE something about the plan -- "
@@ -1055,17 +1055,17 @@ def stream_compound_turn(
     turn_started_at = elapsed_time_fn()
     # Local imports: same import-time cycle avoidance as
     # _load_manifest/_default_provider (service.py imports this module).
-    from mujoco_skills.orchestrator.conflict_payload import delegable_conflicts
     from mujoco_skills.orchestrator import plan_edits
+    from mujoco_skills.orchestrator.compiler_v2_plan import (
+        prepare_compiler_v2_input,
+    )
+    from mujoco_skills.orchestrator.conflict_payload import delegable_conflicts
     from mujoco_skills.orchestrator.service import (
         _compile_via_skill_service,
         _nest_resolved_plan,
         _public_compile_result,
         _validate_via_skill_service,
         resolve_v2_core,
-    )
-    from mujoco_skills.orchestrator.compiler_v2_plan import (
-        prepare_compiler_v2_input,
     )
 
     turn_id = body.get("turn_id")
@@ -1463,6 +1463,32 @@ def stream_compound_turn(
         topology_check_fn(plan)
     except Exception as exc:  # candidate is never committed on a topology rejection
         details = getattr(exc, "error", None)
+        if isinstance(details, dict) and details.get("code") == "assignment_ineligible":
+            # Assignment policy failures are expected user outcomes, not
+            # backend faults.  In particular, a rejected timeline edit must
+            # leave the currently committed plan and compile artifact intact.
+            message = str(details.get("message") or str(exc))
+            write_event({
+                "type": "progress",
+                "stage": "rejected",
+                "text": "The requested assignment is not eligible.",
+            })
+            write_event({
+                "type": "result",
+                "artifact": {
+                    "kind": "no_change_result",
+                    "turn_id": turn_id,
+                    "base_revision": body.get("base_revision"),
+                    "actions": body.get("current_actions") or actions,
+                    "stages": stages + ["rejected"],
+                    "author_message": message,
+                    "authoring_summary": authoring_summary,
+                    "reason": message,
+                    "rejection": details,
+                },
+            })
+            write_event({"type": "message_completed", "text": message})
+            return
         write_event({
             "type": "error",
             "text": str(exc),
@@ -1782,7 +1808,7 @@ EXPLAIN_TOOLS = (
 
 EXPLAIN_PROMPT = (
     "You are a read-only assistant answering questions about the current "
-    "two-robot task plan. You MUST ground every factual claim by calling "
+    "multi-robot task plan. You MUST ground every factual claim by calling "
     "read_author_transcript, read_resolver_report, read_plan, and/or "
     "read_conflicts -- never guess or invent plan state. You MUST NOT "
     "propose, suggest, or imply any plan edit, reassignment, or resolve "

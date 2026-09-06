@@ -42,9 +42,13 @@ from dotenv import load_dotenv
 # from the environment at import time.
 load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
-from mujoco_skills.skills import skill_generators as sg
+from mujoco_skills.eligibility import (
+    AssignmentEligibilityError,
+    require_plan_assignments,
+)
 from mujoco_skills.pipeline.build_navigation_grid import navigation_grid_paths
 from mujoco_skills.service.scene_runtime import scene_runtime_from_env
+from mujoco_skills.skills import skill_generators as sg
 
 RUNTIME = scene_runtime_from_env(
     default_public=Path(__file__).resolve().parents[3] / "frontend/public"
@@ -61,6 +65,10 @@ HOST = os.environ.get("SKILL_SERVICE_HOST", "127.0.0.1")
 SNAPSHOT_TTL_SECONDS = float(os.environ.get("COMPILE_SNAPSHOT_TTL", "300"))
 SNAPSHOT_MAX_ENTRIES = int(os.environ.get("COMPILE_SNAPSHOT_MAX", "32"))
 GENERATED_TRACK_NAMESPACE_LENGTH = 32
+
+
+def _manifest_data():
+    return json.loads(MANIFEST.read_text("utf-8"))
 
 
 def active_compiler_version():
@@ -226,22 +234,23 @@ class CompileSnapshotRegistry:
 def _warm():
     # prime the rig cache + config so the first request is fast too
     island = json.loads(STANDOFFS.read_text("utf-8"))["island_bbox"]
-    ready = sg.load_ready(TRACKS)
     manifest = json.loads(MANIFEST.read_text("utf-8"))
     warmed = []
-    for position, (robot_id, descriptor) in enumerate(
-        manifest.get("robots", {}).items()
-    ):
-        robot_index = (
-            descriptor.get("index", position)
-            if isinstance(descriptor, dict)
-            else position
-        )
-        sg.get_rig(SCENE, int(robot_index), ready, island)
-        warmed.append(robot_id)
+    unsupported = []
+    for robot_id in manifest.get("robots", {}):
+        try:
+            sg.get_robot_adapter(
+                SCENE, robot_id, manifest, island=island)
+            warmed.append(robot_id)
+        except sg.UnsupportedRobotAdapterError:
+            # A heterogeneous scene may contain an M1-discovered robot whose
+            # execution adapter is intentionally not implemented yet.  That
+            # must not prevent the service or supported robots from warming.
+            unsupported.append(robot_id)
     print(
         f"[skill_service] warm: scene={Path(SCENE).name} "
         f"rigs={','.join(warmed)}"
+        + (f" unsupported={','.join(unsupported)}" if unsupported else "")
     )
 
 
@@ -258,6 +267,7 @@ def _compile_uncached(plan, plan_key, *, progress_callback=None):
             prepare_compiler_v2_input,
         )
         compile_plan_input, preparation_report = prepare_compiler_v2_input(plan)
+    require_plan_assignments(_manifest_data(), compile_plan_input)
     sg.validate_plan_topology(compile_plan_input, MANIFEST)
     if version == "v2":
         compile_kwargs = {"scheduler_mode": "v2"}
@@ -440,7 +450,7 @@ def do_compile(plan, *, retain_snapshot=True, progress_callback=None):
 
 
 def do_validate_plan(plan):
-    """Topology-only plan validation; never enters CompileCoordinator/MuJoCo."""
+    """Eligibility + topology validation; never enters MuJoCo."""
     if not isinstance(plan, dict):
         return {
             "ok": False,
@@ -452,7 +462,10 @@ def do_validate_plan(plan):
             },
         }
     try:
+        require_plan_assignments(_manifest_data(), plan)
         sg.validate_plan_topology(plan, MANIFEST)
+    except AssignmentEligibilityError as exc:
+        return {"ok": False, "error": exc.as_dict()}
     except sg.TopologyError as exc:
         return {"ok": False, "error": exc.as_dict()}
     except ValueError as exc:
@@ -566,6 +579,16 @@ class Handler(BaseHTTPRequestHandler):
                         "type": "error", "status": 422,
                         "error": str(exc), "detail": exc.as_dict(),
                     })
+                except sg.UnsupportedRobotAdapterError as exc:
+                    write_event({
+                        "type": "error", "status": 422,
+                        "error": str(exc), "detail": exc.to_dict(),
+                    })
+                except AssignmentEligibilityError as exc:
+                    write_event({
+                        "type": "error", "status": 422,
+                        "error": str(exc), "detail": exc.as_dict(),
+                    })
                 except Exception as exc:  # noqa: BLE001
                     write_event({
                         "type": "error", "status": 400,
@@ -587,6 +610,10 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(404, {"error": "not found"})
         except sg.IncrementalCompileConflict as e:
+            self._send(422, {"error": str(e), "detail": e.as_dict()})
+        except sg.UnsupportedRobotAdapterError as e:
+            self._send(422, {"error": str(e), "detail": e.to_dict()})
+        except AssignmentEligibilityError as e:
             self._send(422, {"error": str(e), "detail": e.as_dict()})
         except Exception as e:  # noqa: BLE001
             self._send(400, {"error": str(e)})
