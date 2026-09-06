@@ -49,3 +49,8 @@ Thumbs.db
 /experiments/
 /tests/
 /scripts/
+
+# System-validation generated artifacts
+/benchmarks/system_validation/results/*.jsonl
+/output/
+/tmp/
