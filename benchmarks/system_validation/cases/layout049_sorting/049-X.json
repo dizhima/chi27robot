@@ -1,0 +1,318 @@
+{
+  "schema_version": 2,
+  "case_set_id": "049-X",
+  "scene": {
+    "id": "layout049_sorting",
+    "xml": "frontend/public/assets/robocasa/layout049_sorting.xml",
+    "manifest": "frontend/public/trajectories/layout049_sorting/skills_manifest.json"
+  },
+  "provenance": {
+    "kind": "benchmark_design",
+    "description": "Wave-2 pilot (C): three-robot constraint-dense sort — one category per robot, within-robot ordering for the pantry robot, and the condiment gated cross-robot on all three fruit tasks."
+  },
+  "initial": {
+    "description": "Robot0: mugs and cup to the sink. Robot1: fruit to the fridge (closed after). Robot2: cereal, canned food, condiment to the cabinet — cereal first, condiment last, and the condiment only after all the fruit is in the fridge.",
+    "prompt_variants": [
+      {
+        "id": "v1_dense",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Full clean-up, one category per robot. Robot 0: both mugs and the cup into the sink. Robot 1: both apples and the lemon into the fridge, and close it. Robot 2: the cereal, the canned food and the condiment bottle into the cabinet — cereal first, condiment last, and the condiment must only go in after all the fruit is in the fridge."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      {
+        "id": "v2_reordered",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Three robots, three jobs. The fruit — apples and lemon — goes into the fridge, that's robot 1, fridge closed at the end. The pantry items — cereal, canned food, condiment — go into the cabinet with robot 2, starting with the cereal and finishing with the condiment; the condiment waits until every piece of fruit is in the fridge. Robot 0 puts the two mugs and the cup in the sink."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      {
+        "id": "v3_real_user_shorthand",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "r0: mugs + cup -> sink\nr1: apples + lemon -> fridge (close after)\nr2: cereal -> cabinet first, then canned food, condiment last (condiment only after all fruit is in the fridge)"
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      }
+    ],
+    "expected": {
+      "required_moves": [
+        { "object": "mug_1", "dest": "sink", "robot": "robot0" },
+        { "object": "mug_2", "dest": "sink", "robot": "robot0" },
+        { "object": "cup_1", "dest": "sink", "robot": "robot0" },
+        { "object": "apple_1", "dest": "fridge", "robot": "robot1" },
+        { "object": "apple_2", "dest": "fridge", "robot": "robot1" },
+        { "object": "lemon_1", "dest": "fridge", "robot": "robot1" },
+        { "object": "cereal_1", "dest": "cabinet", "robot": "robot2" },
+        { "object": "canned_food_1", "dest": "cabinet", "robot": "robot2" },
+        { "object": "condiment_bottle_1", "dest": "cabinet", "robot": "robot2" }
+      ],
+      "assignment": { "mode": "exact" },
+      "ordering": { "mode": "constrained" },
+      "required_orderings": [
+        {
+          "before": "move_cereal_1_cabinet",
+          "after": "move_canned_food_1_cabinet"
+        },
+        {
+          "before": "move_canned_food_1_cabinet",
+          "after": "move_condiment_bottle_1_cabinet"
+        }
+      ],
+      "required_dependencies": [
+        {
+          "action_id": "move_condiment_bottle_1_cabinet",
+          "after_action_id": "move_apple_1_fridge"
+        },
+        {
+          "action_id": "move_condiment_bottle_1_cabinet",
+          "after_action_id": "move_apple_2_fridge"
+        },
+        {
+          "action_id": "move_condiment_bottle_1_cabinet",
+          "after_action_id": "move_lemon_1_fridge"
+        }
+      ],
+      "required_final_facility_states": {
+        "fridge": "closed",
+        "cabinet": "closed"
+      },
+      "allow_derived_facility_actions": true,
+      "allow_additional_user_moves": false
+    }
+  },
+  "revision_base": {
+    "description": "Fixed base matching the dense initial request; robot1 articulates the fridge, robot2 closes the cabinet.",
+    "actions": [
+      {
+        "id": "move_mug_1_sink",
+        "robot": "robot0",
+        "op": "move",
+        "object": "mug_1",
+        "dest": "sink",
+        "serves": "move_mug_1_sink",
+        "robot_locked": true
+      },
+      {
+        "id": "move_mug_2_sink",
+        "robot": "robot0",
+        "op": "move",
+        "object": "mug_2",
+        "dest": "sink",
+        "serves": "move_mug_2_sink",
+        "robot_locked": true
+      },
+      {
+        "id": "move_cup_1_sink",
+        "robot": "robot0",
+        "op": "move",
+        "object": "cup_1",
+        "dest": "sink",
+        "serves": "move_cup_1_sink",
+        "robot_locked": true
+      },
+      {
+        "id": "move_apple_1_fridge:open",
+        "robot": "robot1",
+        "op": "open",
+        "facility": "fridge",
+        "robot_locked": false
+      },
+      {
+        "id": "move_apple_1_fridge",
+        "robot": "robot1",
+        "op": "move",
+        "object": "apple_1",
+        "dest": "fridge",
+        "serves": "move_apple_1_fridge",
+        "robot_locked": true,
+        "after": ["move_apple_1_fridge:open"]
+      },
+      {
+        "id": "move_apple_2_fridge",
+        "robot": "robot1",
+        "op": "move",
+        "object": "apple_2",
+        "dest": "fridge",
+        "serves": "move_apple_2_fridge",
+        "robot_locked": true,
+        "after": ["move_apple_1_fridge:open"]
+      },
+      {
+        "id": "move_lemon_1_fridge",
+        "robot": "robot1",
+        "op": "move",
+        "object": "lemon_1",
+        "dest": "fridge",
+        "serves": "move_lemon_1_fridge",
+        "robot_locked": true,
+        "after": ["move_apple_1_fridge:open"]
+      },
+      {
+        "id": "move_apple_1_fridge:close",
+        "robot": "robot1",
+        "op": "close",
+        "facility": "fridge",
+        "robot_locked": false,
+        "after": [
+          "move_apple_1_fridge",
+          "move_apple_2_fridge",
+          "move_lemon_1_fridge"
+        ]
+      },
+      {
+        "id": "move_cereal_1_cabinet",
+        "robot": "robot2",
+        "op": "move",
+        "object": "cereal_1",
+        "dest": "cabinet",
+        "serves": "move_cereal_1_cabinet",
+        "robot_locked": true
+      },
+      {
+        "id": "move_canned_food_1_cabinet",
+        "robot": "robot2",
+        "op": "move",
+        "object": "canned_food_1",
+        "dest": "cabinet",
+        "serves": "move_canned_food_1_cabinet",
+        "robot_locked": true,
+        "after": ["move_cereal_1_cabinet"]
+      },
+      {
+        "id": "move_condiment_bottle_1_cabinet",
+        "robot": "robot2",
+        "op": "move",
+        "object": "condiment_bottle_1",
+        "dest": "cabinet",
+        "serves": "move_condiment_bottle_1_cabinet",
+        "robot_locked": true,
+        "after": [
+          "move_canned_food_1_cabinet",
+          "move_apple_1_fridge",
+          "move_apple_2_fridge",
+          "move_lemon_1_fridge"
+        ]
+      },
+      {
+        "id": "move_cereal_1_cabinet:close",
+        "robot": "robot2",
+        "op": "close",
+        "facility": "cabinet",
+        "robot_locked": false,
+        "after": [
+          "move_cereal_1_cabinet",
+          "move_canned_food_1_cabinet",
+          "move_condiment_bottle_1_cabinet"
+        ]
+      }
+    ]
+  },
+  "revisions": [
+    {
+      "id": "compound_rebalance_pantry",
+      "operation": "compound",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Robot 2 only keeps the cereal — hand the canned food to robot 0 and the condiment bottle to robot 1."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      "expected": {
+        "changes": [
+          {
+            "type": "reassign",
+            "action_id": "move_canned_food_1_cabinet",
+            "robot": "robot0"
+          },
+          {
+            "type": "reassign",
+            "action_id": "move_condiment_bottle_1_cabinet",
+            "robot": "robot1"
+          }
+        ],
+        "preserve": "all_unmentioned_user_tasks",
+        "preserve_facility_assignments": ["move_cereal_1_cabinet:close"],
+        "required_dependencies": [
+          {
+            "action_id": "move_cereal_1_cabinet:close",
+            "after_action_id": "move_canned_food_1_cabinet"
+          },
+          {
+            "action_id": "move_cereal_1_cabinet:close",
+            "after_action_id": "move_condiment_bottle_1_cabinet"
+          }
+        ]
+      }
+    },
+    {
+      "id": "prose_remove_lemon",
+      "operation": "remove",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Skip the lemon — it can stay on the counter."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      "expected": {
+        "change": { "type": "remove", "action_id": "move_lemon_1_fridge" },
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    },
+    {
+      "id": "prose_precedence_cup_after_apples",
+      "operation": "precedence",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Robot 0 saves the cup for last — it goes into the sink only after both apples are in the fridge."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      "expected": {
+        "changes": [
+          {
+            "type": "precedence",
+            "target_action_id": "move_cup_1_sink",
+            "after_action_id": "move_apple_1_fridge"
+          },
+          {
+            "type": "precedence",
+            "target_action_id": "move_cup_1_sink",
+            "after_action_id": "move_apple_2_fridge"
+          }
+        ],
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    }
+  ]
+}

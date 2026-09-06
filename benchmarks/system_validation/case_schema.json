@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "case_schema.json",
+  "title": "System validation benchmark case set",
+  "type": "object",
+  "required": ["schema_version", "case_set_id", "scene", "initial", "revision_base", "revisions"],
+  "properties": {
+    "schema_version": { "const": 2 },
+    "case_set_id": { "type": "string", "minLength": 1 },
+    "scene": {
+      "type": "object",
+      "required": ["id", "xml", "manifest"],
+      "properties": {
+        "id": { "type": "string" },
+        "xml": { "type": "string" },
+        "manifest": { "type": "string" }
+      }
+    },
+    "initial": {
+      "type": "object",
+      "required": ["prompt_variants", "expected"],
+      "properties": {
+        "prompt_variants": { "type": "array", "minItems": 1 },
+        "expected": { "type": "object" }
+      }
+    },
+    "revision_base": {
+      "type": "object",
+      "required": ["actions"],
+      "properties": { "actions": { "type": "array", "minItems": 1 } }
+    },
+    "revisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "operation", "turn", "expected"],
+        "properties": {
+          "turn": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": ["channel", "messages"],
+                "properties": { "channel": { "const": "conversation" } }
+              },
+              {
+                "type": "object",
+                "required": ["channel", "intent_hint", "messages", "edits"],
+                "properties": {
+                  "channel": { "const": "timeline" },
+                  "intent_hint": { "const": "edit" },
+                  "edits": { "type": "array", "minItems": 1 }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

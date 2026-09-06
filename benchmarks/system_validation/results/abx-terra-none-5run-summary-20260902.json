@@ -1,0 +1,49 @@
+{
+  "model": "gpt-5.6-terra",
+  "reasoning_effort": "none",
+  "compile_mode": "llm-only",
+  "case_families": ["A", "B", "X"],
+  "rounds": 5,
+  "source_files": [
+    "abx-terra-none-usage-1run-20260901.jsonl",
+    "abx-terra-none-usage-additional3-20260901.jsonl",
+    "abx-terra-none-usage-5th-20260902.jsonl"
+  ],
+  "totals": {
+    "llm_units": {"successes": 712, "runs": 730, "success_rate": 0.975342},
+    "initial": {"successes": 355, "runs": 360, "success_rate": 0.986111, "median_latency_ms": 6400.016},
+    "conversation_revision": {"successes": 357, "runs": 370, "success_rate": 0.964865, "median_latency_ms": 3420.011},
+    "overall_llm_median_latency_ms": 5014.1255
+  },
+  "llm_success_by_family": {
+    "A": {"successes": 245, "runs": 245, "success_rate": 1.0},
+    "B": {"successes": 242, "runs": 245, "success_rate": 0.987755},
+    "X": {"successes": 225, "runs": 240, "success_rate": 0.9375}
+  },
+  "per_round": [
+    {"round": 1, "initial": "70/72", "revision": "72/74", "llm": "142/146"},
+    {"round": 2, "initial": "72/72", "revision": "72/74", "llm": "144/146"},
+    {"round": 3, "initial": "72/72", "revision": "71/74", "llm": "143/146"},
+    {"round": 4, "initial": "70/72", "revision": "71/74", "llm": "141/146"},
+    {"round": 5, "initial": "71/72", "revision": "71/74", "llm": "142/146"}
+  ],
+  "usage": {
+    "api_requests": 1590,
+    "input_tokens": 9528193,
+    "cached_input_tokens": 8560215,
+    "cache_write_tokens": 336793,
+    "output_tokens": 282834,
+    "reasoning_tokens": 0,
+    "total_tokens": 9811027
+  },
+  "failed_units": [
+    {"case_set_id": "049-X", "kind": "revision", "unit_id": "compound_rebalance_pantry", "failures": 5, "runs": 5},
+    {"case_set_id": "024-H-X", "kind": "revision", "unit_id": "compound_reassign_fruit_to_robot0", "failures": 4, "runs": 5},
+    {"case_set_id": "038-H-X", "kind": "revision", "unit_id": "compound_remove_cereal_2_reassign_juice", "failures": 4, "runs": 5},
+    {"case_set_id": "024-X", "kind": "initial", "unit_id": "v1_dense", "failures": 1, "runs": 5},
+    {"case_set_id": "024-H-B", "kind": "initial", "unit_id": "v3_items_first", "failures": 1, "runs": 5},
+    {"case_set_id": "038-B", "kind": "initial", "unit_id": "v3_destination_first", "failures": 1, "runs": 5},
+    {"case_set_id": "038-H-B", "kind": "initial", "unit_id": "v2_items_first", "failures": 1, "runs": 5},
+    {"case_set_id": "42-X", "kind": "initial", "unit_id": "v3_real_user_shorthand", "failures": 1, "runs": 5}
+  ]
+}

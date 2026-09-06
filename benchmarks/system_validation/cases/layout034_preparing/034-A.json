@@ -1,0 +1,44 @@
+{
+  "schema_version": 2,
+  "case_set_id": "034-A",
+  "scene": { "id": "layout034_preparing", "xml": "frontend/public/assets/robocasa/layout034_preparing.xml", "manifest": "frontend/public/trajectories/layout034_preparing/skills_manifest.json" },
+  "provenance": { "kind": "benchmark_design", "description": "Explicit food and tableware retrieval in the large-object scene" },
+  "initial": {
+    "description": "Explicit robot assignment across fridge and cabinet sources.",
+    "prompt_variants": [
+      { "id": "v1_robot_first", "channel": "conversation", "messages": [{ "role": "user", "content": "Let robot 0 bring cake_1, apple_1, and juice_1 to the island. Let robot 1 bring cup_1, cup_2, and bowl_1 to the island." }], "scene_refs": [], "plan_refs": [] },
+      { "id": "v2_tableware_first", "channel": "conversation", "messages": [{ "role": "user", "content": "Use robot 1 to place bowl_1, cup_2, and cup_1 on the island, and use robot 0 to bring juice_1, cake_1, and apple_1 there." }], "scene_refs": [], "plan_refs": [] },
+      { "id": "v3_grouped_natural", "channel": "conversation", "messages": [{ "role": "user", "content": "Prepare the island with cake_1, apple_1, and juice_1 handled by robot 0, while robot 1 retrieves cup_1, cup_2, and bowl_1." }], "scene_refs": [], "plan_refs": [] }
+    ],
+    "expected": {
+      "required_moves": [
+        { "object": "cake_1", "dest": "island", "robot": "robot0" }, { "object": "apple_1", "dest": "island", "robot": "robot0" }, { "object": "juice_1", "dest": "island", "robot": "robot0" },
+        { "object": "cup_1", "dest": "island", "robot": "robot1" }, { "object": "cup_2", "dest": "island", "robot": "robot1" }, { "object": "bowl_1", "dest": "island", "robot": "robot1" }
+      ],
+      "assignment": { "mode": "exact" }, "ordering": { "mode": "unconstrained" },
+      "required_final_facility_states": { "fridge": "closed", "cabinet": "closed" },
+      "allow_derived_facility_actions": true, "allow_additional_user_moves": false
+    }
+  },
+  "revision_base": {
+    "description": "Fixed explicit-assignment base.",
+    "actions": [
+      { "id": "move_cake_1_island", "robot": "robot0", "op": "move", "object": "cake_1", "dest": "island", "serves": "move_cake_1_island", "robot_locked": true },
+      { "id": "move_apple_1_island", "robot": "robot0", "op": "move", "object": "apple_1", "dest": "island", "serves": "move_apple_1_island", "robot_locked": true },
+      { "id": "move_juice_1_island", "robot": "robot0", "op": "move", "object": "juice_1", "dest": "island", "serves": "move_juice_1_island", "robot_locked": true },
+      { "id": "move_cake_1_island:source:close", "robot": "robot0", "op": "close", "facility": "fridge", "robot_locked": true, "after": ["move_cake_1_island", "move_apple_1_island", "move_juice_1_island"] },
+      { "id": "move_cup_1_island", "robot": "robot1", "op": "move", "object": "cup_1", "dest": "island", "serves": "move_cup_1_island", "robot_locked": true },
+      { "id": "move_cup_2_island", "robot": "robot1", "op": "move", "object": "cup_2", "dest": "island", "serves": "move_cup_2_island", "robot_locked": true },
+      { "id": "move_bowl_1_island", "robot": "robot1", "op": "move", "object": "bowl_1", "dest": "island", "serves": "move_bowl_1_island", "robot_locked": true },
+      { "id": "move_cup_1_island:source:close", "robot": "robot1", "op": "close", "facility": "cabinet", "robot_locked": true, "after": ["move_cup_1_island", "move_cup_2_island", "move_bowl_1_island"] }
+    ]
+  },
+  "revisions": [
+    { "id": "add_knife_1_to_island", "operation": "add", "turn": { "channel": "conversation", "messages": [{ "role": "user", "content": "Also bring knife_1 to the island." }], "scene_refs": [{ "kind": "object", "name": "knife_1" }, { "kind": "facility", "name": "island" }], "plan_refs": [] }, "expected": { "change": { "type": "add", "action": { "op": "move", "object": "knife_1", "dest": "island" } }, "preserve": "all_unmentioned_user_tasks" } },
+    { "id": "remove_apple_1", "operation": "remove", "turn": { "channel": "conversation", "messages": [{ "role": "user", "content": "Remove robot0 · apple_1 → island (plan task t1) from the plan." }], "scene_refs": [], "plan_refs": [{ "kind": "plan_task", "handle": "t1", "action_id": "move_apple_1_island" }] }, "expected": { "change": { "type": "remove", "action_id": "move_apple_1_island" }, "preserve": "all_unmentioned_user_tasks" } },
+    { "id": "retarget_cup_1_to_sink", "operation": "retarget", "turn": { "channel": "conversation", "messages": [{ "role": "user", "content": "Change robot1 · cup_1 → island (plan task t1) so cup_1 goes to the sink instead." }], "scene_refs": [{ "kind": "facility", "name": "sink" }], "plan_refs": [{ "kind": "plan_task", "handle": "t1", "action_id": "move_cup_1_island" }] }, "expected": { "change": { "type": "retarget", "action_id": "move_cup_1_island", "dest": "sink" }, "preserve": "all_unmentioned_user_tasks" } },
+    { "id": "reassign_apple_1_to_robot1", "operation": "reassign", "turn": { "channel": "timeline", "intent_hint": "edit", "messages": [{ "role": "user", "content": "Apply edits" }], "edits": [{ "op": "move_task", "target": { "actionId": "move_apple_1_island" }, "robot": "robot1", "afterActionId": "move_bowl_1_island" }] }, "expected": { "change": { "type": "reassign", "action_id": "move_apple_1_island", "robot": "robot1", "after_action_id": "move_bowl_1_island" }, "preserve": "all_unmentioned_user_tasks" } },
+    { "id": "reorder_juice_1_before_cake_1", "operation": "reorder", "turn": { "channel": "timeline", "intent_hint": "edit", "messages": [{ "role": "user", "content": "Apply edits" }], "edits": [{ "op": "move_task", "target": { "actionId": "move_juice_1_island" }, "robot": "robot0", "afterActionId": null }] }, "expected": { "change": { "type": "reorder", "before_action_id": "move_juice_1_island", "after_action_id": "move_cake_1_island" }, "preserve": "all_unmentioned_user_tasks" } },
+    { "id": "precedence_cup_1_after_cake_1", "operation": "precedence", "turn": { "channel": "timeline", "intent_hint": "edit", "messages": [{ "role": "user", "content": "Apply edits" }], "edits": [{ "op": "set_step_after", "target": { "stepId": "move_cup_1_island:s0" }, "after": ["move_cake_1_island:s4"] }] }, "expected": { "change": { "type": "precedence", "target_action_id": "move_cup_1_island", "after_action_id": "move_cake_1_island" }, "preserve": "all_unmentioned_user_tasks" } }
+  ]
+}

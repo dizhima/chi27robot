@@ -1,0 +1,46 @@
+{
+  "schema_version": 2,
+  "case_set_id": "024-B",
+  "scene": { "id": "layout024_sorting", "xml": "frontend/public/assets/robocasa/layout024_sorting.xml", "manifest": "frontend/public/trajectories/layout024_sorting/skills_manifest.json" },
+  "provenance": { "kind": "benchmark_design", "description": "Implicit multi-category dish and utensil sorting" },
+  "initial": {
+    "description": "Implicit allocation across three destinations.",
+    "prompt_variants": [
+      { "id": "v1_object_groups", "channel": "conversation", "messages": [{ "role": "user", "content": "Use both robots to sort bowl_1 and bowl_2 into the cabinet, cup_1 and cup_2 into the sink, and fork_1 into the drawer. Decide how to divide the work." }], "scene_refs": [], "plan_refs": [] },
+      { "id": "v2_destinations_first", "channel": "conversation", "messages": [{ "role": "user", "content": "Have both robots share this sorting job: the cabinet should receive bowl_2 and bowl_1, the sink should receive cup_2 and cup_1, and the drawer should receive fork_1." }], "scene_refs": [], "plan_refs": [] },
+      { "id": "v3_grouped_natural", "channel": "conversation", "messages": [{ "role": "user", "content": "With both robots, put the two bowls in the cabinet, clear both cups into the sink, and store fork_1 in the drawer. Let the robots choose the allocation." }], "scene_refs": [], "plan_refs": [] }
+    ],
+    "expected": {
+      "required_moves": [
+        { "object": "bowl_1", "dest": "cabinet" }, { "object": "bowl_2", "dest": "cabinet" },
+        { "object": "cup_1", "dest": "sink" }, { "object": "cup_2", "dest": "sink" },
+        { "object": "fork_1", "dest": "drawer" }
+      ],
+      "assignment": { "mode": "any_valid", "required_robots": ["robot0", "robot1"] },
+      "ordering": { "mode": "unconstrained" },
+      "required_final_facility_states": { "cabinet": "closed", "drawer": "closed" },
+      "allow_derived_facility_actions": true,
+      "allow_additional_user_moves": false
+    }
+  },
+  "revision_base": {
+    "description": "Fixed two-robot base for revisions; initial authoring may choose another valid allocation.",
+    "actions": [
+      { "id": "move_bowl_1_cabinet", "robot": "robot0", "op": "move", "object": "bowl_1", "dest": "cabinet", "serves": "move_bowl_1_cabinet", "robot_locked": false },
+      { "id": "move_bowl_2_cabinet", "robot": "robot0", "op": "move", "object": "bowl_2", "dest": "cabinet", "serves": "move_bowl_2_cabinet", "robot_locked": false },
+      { "id": "move_bowl_1_cabinet:close", "robot": "robot0", "op": "close", "facility": "cabinet", "robot_locked": false, "after": ["move_bowl_1_cabinet", "move_bowl_2_cabinet"] },
+      { "id": "move_cup_1_sink", "robot": "robot1", "op": "move", "object": "cup_1", "dest": "sink", "serves": "move_cup_1_sink", "robot_locked": false },
+      { "id": "move_cup_2_sink", "robot": "robot1", "op": "move", "object": "cup_2", "dest": "sink", "serves": "move_cup_2_sink", "robot_locked": false },
+      { "id": "move_fork_1_drawer", "robot": "robot1", "op": "move", "object": "fork_1", "dest": "drawer", "serves": "move_fork_1_drawer", "robot_locked": false },
+      { "id": "move_fork_1_drawer:close", "robot": "robot1", "op": "close", "facility": "drawer", "robot_locked": false, "after": ["move_fork_1_drawer"] }
+    ]
+  },
+  "revisions": [
+    { "id": "add_spoon_1_to_drawer", "operation": "add", "turn": { "channel": "conversation", "messages": [{ "role": "user", "content": "Also put spoon_1 in the drawer." }], "scene_refs": [{ "kind": "object", "name": "spoon_1" }, { "kind": "facility", "name": "drawer" }], "plan_refs": [] }, "expected": { "change": { "type": "add", "action": { "op": "move", "object": "spoon_1", "dest": "drawer" } }, "preserve": "all_unmentioned_user_tasks" } },
+    { "id": "remove_fork_1", "operation": "remove", "turn": { "channel": "conversation", "messages": [{ "role": "user", "content": "Remove robot1 · fork_1 → drawer (plan task t1) from the plan." }], "scene_refs": [], "plan_refs": [{ "kind": "plan_task", "handle": "t1", "action_id": "move_fork_1_drawer" }] }, "expected": { "change": { "type": "remove", "action_id": "move_fork_1_drawer" }, "preserve": "all_unmentioned_user_tasks" } },
+    { "id": "retarget_cup_2_to_cabinet", "operation": "retarget", "turn": { "channel": "conversation", "messages": [{ "role": "user", "content": "Change robot1 · cup_2 → sink (plan task t1) so cup_2 goes to the cabinet instead." }], "scene_refs": [{ "kind": "facility", "name": "cabinet" }], "plan_refs": [{ "kind": "plan_task", "handle": "t1", "action_id": "move_cup_2_sink" }] }, "expected": { "change": { "type": "retarget", "action_id": "move_cup_2_sink", "dest": "cabinet" }, "preserve": "all_unmentioned_user_tasks" } },
+    { "id": "reassign_bowl_2_to_robot1", "operation": "reassign", "turn": { "channel": "timeline", "intent_hint": "edit", "messages": [{ "role": "user", "content": "Apply edits" }], "edits": [{ "op": "move_task", "target": { "actionId": "move_bowl_2_cabinet" }, "robot": "robot1", "afterActionId": "move_fork_1_drawer" }] }, "expected": { "change": { "type": "reassign", "action_id": "move_bowl_2_cabinet", "robot": "robot1", "after_action_id": "move_fork_1_drawer" }, "preserve": "all_unmentioned_user_tasks" } },
+    { "id": "reorder_cup_2_before_cup_1", "operation": "reorder", "turn": { "channel": "timeline", "intent_hint": "edit", "messages": [{ "role": "user", "content": "Apply edits" }], "edits": [{ "op": "move_task", "target": { "actionId": "move_cup_2_sink" }, "robot": "robot1", "afterActionId": null }] }, "expected": { "change": { "type": "reorder", "before_action_id": "move_cup_2_sink", "after_action_id": "move_cup_1_sink" }, "preserve": "all_unmentioned_user_tasks" } },
+    { "id": "precedence_cup_1_after_bowl_1", "operation": "precedence", "turn": { "channel": "timeline", "intent_hint": "edit", "messages": [{ "role": "user", "content": "Apply edits" }], "edits": [{ "op": "set_step_after", "target": { "stepId": "move_cup_1_sink:s0" }, "after": ["move_bowl_1_cabinet:s4"] }] }, "expected": { "change": { "type": "precedence", "target_action_id": "move_cup_1_sink", "after_action_id": "move_bowl_1_cabinet" }, "preserve": "all_unmentioned_user_tasks" } }
+  ]
+}

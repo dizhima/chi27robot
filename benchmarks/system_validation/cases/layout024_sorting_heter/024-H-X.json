@@ -1,0 +1,331 @@
+{
+  "schema_version": 2,
+  "case_set_id": "024-H-X",
+  "scene": {
+    "id": "layout024_sorting_heter",
+    "xml": "frontend/public/assets/robocasa/layout024_sorting_heter.xml",
+    "manifest": "frontend/public/trajectories/layout024_sorting_heter/skills_manifest.json"
+  },
+  "provenance": {
+    "kind": "benchmark_design",
+    "description": "Wave-2 pilot (E): eligibility-aware allocation under underspecification. The Stretch (robot1) cannot place into the drawer or cabinet, so forks and bowls are forced onto robot0 while cups (sink) and fruit (fridge) stay free."
+  },
+  "initial": {
+    "description": "Category sort with free allocation: forks to drawer, bowls to cabinet, cups to sink, fruit to fridge. Drawer and cabinet destinations are only feasible for robot0.",
+    "prompt_variants": [
+      {
+        "id": "v1_category",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Tidy up: the forks go in the drawer, the bowls in the cabinet, the cups in the sink, and the fruit in the fridge. Split the work between the robots — both must help — and close the fridge at the end."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      {
+        "id": "v2_goal_state",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "When you're done I want: drawer holding both forks, cabinet holding both bowls, both cups in the sink, and the apple and orange in the fridge. Divide it between the two robots however works, but use both of them, and don't leave the fridge open."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      {
+        "id": "v3_real_user_shorthand",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "forks -> drawer, bowls -> cabinet, cups -> sink, fruit -> fridge. both robots, close the fridge after"
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      }
+    ],
+    "expected": {
+      "required_moves": [
+        {
+          "object": "fork_1",
+          "dest": "drawer",
+          "robot": "robot0"
+        },
+        {
+          "object": "fork_2",
+          "dest": "drawer",
+          "robot": "robot0"
+        },
+        {
+          "object": "bowl_1",
+          "dest": "cabinet",
+          "robot": "robot0"
+        },
+        {
+          "object": "bowl_2",
+          "dest": "cabinet",
+          "robot": "robot0"
+        },
+        {
+          "object": "cup_1",
+          "dest": "sink"
+        },
+        {
+          "object": "cup_2",
+          "dest": "sink"
+        },
+        {
+          "object": "apple_1",
+          "dest": "fridge"
+        },
+        {
+          "object": "orange_1",
+          "dest": "fridge"
+        }
+      ],
+      "assignment": {
+        "mode": "unconstrained",
+        "required_robots": [
+          "robot0",
+          "robot1"
+        ]
+      },
+      "ordering": {
+        "mode": "unconstrained"
+      },
+      "required_final_facility_states": {
+        "fridge": "closed"
+      },
+      "allow_derived_facility_actions": true,
+      "allow_additional_user_moves": false
+    }
+  },
+  "revision_base": {
+    "description": "Fixed feasible base: robot0 handles forks, bowls, and fridge articulation; robot1 handles cups and fruit.",
+    "actions": [
+      {
+        "id": "move_fork_1_drawer",
+        "robot": "robot0",
+        "op": "move",
+        "object": "fork_1",
+        "dest": "drawer",
+        "serves": "move_fork_1_drawer",
+        "robot_locked": true
+      },
+      {
+        "id": "move_fork_2_drawer",
+        "robot": "robot0",
+        "op": "move",
+        "object": "fork_2",
+        "dest": "drawer",
+        "serves": "move_fork_2_drawer",
+        "robot_locked": true
+      },
+      {
+        "id": "move_bowl_1_cabinet",
+        "robot": "robot0",
+        "op": "move",
+        "object": "bowl_1",
+        "dest": "cabinet",
+        "serves": "move_bowl_1_cabinet",
+        "robot_locked": true
+      },
+      {
+        "id": "move_bowl_2_cabinet",
+        "robot": "robot0",
+        "op": "move",
+        "object": "bowl_2",
+        "dest": "cabinet",
+        "serves": "move_bowl_2_cabinet",
+        "robot_locked": true
+      },
+      {
+        "id": "move_apple_1_fridge:open",
+        "robot": "robot0",
+        "op": "open",
+        "facility": "fridge",
+        "robot_locked": false
+      },
+      {
+        "id": "move_cup_1_sink",
+        "robot": "robot1",
+        "op": "move",
+        "object": "cup_1",
+        "dest": "sink",
+        "serves": "move_cup_1_sink",
+        "robot_locked": true
+      },
+      {
+        "id": "move_cup_2_sink",
+        "robot": "robot1",
+        "op": "move",
+        "object": "cup_2",
+        "dest": "sink",
+        "serves": "move_cup_2_sink",
+        "robot_locked": true
+      },
+      {
+        "id": "move_apple_1_fridge",
+        "robot": "robot1",
+        "op": "move",
+        "object": "apple_1",
+        "dest": "fridge",
+        "serves": "move_apple_1_fridge",
+        "robot_locked": true,
+        "after": [
+          "move_apple_1_fridge:open"
+        ]
+      },
+      {
+        "id": "move_orange_1_fridge",
+        "robot": "robot1",
+        "op": "move",
+        "object": "orange_1",
+        "dest": "fridge",
+        "serves": "move_orange_1_fridge",
+        "robot_locked": true,
+        "after": [
+          "move_apple_1_fridge:open"
+        ]
+      },
+      {
+        "id": "move_apple_1_fridge:close",
+        "robot": "robot0",
+        "op": "close",
+        "facility": "fridge",
+        "robot_locked": false,
+        "after": [
+          "move_apple_1_fridge",
+          "move_orange_1_fridge"
+        ]
+      }
+    ]
+  },
+  "revisions": [
+    {
+      "id": "reject_reassign_forks_to_stretch",
+      "operation": "reassign",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Let robot 1 handle the forks instead."
+          }
+        ],
+        "scene_refs": [
+          {
+            "kind": "robot",
+            "name": "robot1"
+          }
+        ],
+        "plan_refs": []
+      },
+      "expected": {
+        "outcome": "rejected",
+        "rejection": {
+          "reason_code": "PLACEMENT_STRATEGY_UNAVAILABLE",
+          "plan_unchanged": true,
+          "compiler_not_run": true,
+          "probe": {
+            "id": "move_fork_1_drawer",
+            "robot": "robot1",
+            "op": "move",
+            "object": "fork_1",
+            "dest": "drawer"
+          }
+        }
+      }
+    },
+    {
+      "id": "compound_retarget_bowls_to_sink",
+      "operation": "compound",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Actually just rinse the bowls — send both of them to the sink instead of the cabinet."
+          }
+        ],
+        "scene_refs": [
+          {
+            "kind": "facility",
+            "name": "sink"
+          }
+        ],
+        "plan_refs": []
+      },
+      "expected": {
+        "changes": [
+          {
+            "type": "retarget",
+            "action_id": "move_bowl_1_cabinet",
+            "dest": "sink"
+          },
+          {
+            "type": "retarget",
+            "action_id": "move_bowl_2_cabinet",
+            "dest": "sink"
+          }
+        ],
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    },
+    {
+      "id": "compound_reassign_fruit_to_robot0",
+      "operation": "compound",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Robot 0 should handle the fruit instead — robot 1 has enough to do."
+          }
+        ],
+        "scene_refs": [
+          {
+            "kind": "robot",
+            "name": "robot0"
+          }
+        ],
+        "plan_refs": []
+      },
+      "expected": {
+        "changes": [
+          {
+            "type": "reassign",
+            "action_id": "move_apple_1_fridge",
+            "robot": "robot0"
+          },
+          {
+            "type": "reassign",
+            "action_id": "move_orange_1_fridge",
+            "robot": "robot0"
+          }
+        ],
+        "preserve": "all_unmentioned_user_tasks",
+        "required_dependencies": [
+          {
+            "action_id": "move_apple_1_fridge",
+            "after_action_id": "move_apple_1_fridge:open"
+          },
+          {
+            "action_id": "move_apple_1_fridge:close",
+            "after_action_id": "move_apple_1_fridge"
+          },
+          {
+            "action_id": "move_apple_1_fridge:close",
+            "after_action_id": "move_orange_1_fridge"
+          }
+        ]
+      }
+    }
+  ]
+}

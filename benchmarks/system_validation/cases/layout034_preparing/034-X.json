@@ -1,0 +1,334 @@
+{
+  "schema_version": 2,
+  "case_set_id": "034-X",
+  "scene": {
+    "id": "layout034_preparing",
+    "xml": "frontend/public/assets/robocasa/layout034_preparing.xml",
+    "manifest": "frontend/public/trajectories/layout034_preparing/skills_manifest.json"
+  },
+  "provenance": {
+    "kind": "benchmark_design",
+    "description": "Wave-2 pilot (C): volume test — 11 moves grounded by source category ('everything from the fridge' vs 'everything from the cabinet'), one item diverted to the sink, within-robot ordering, and a cross-robot 'cake last' precedence."
+  },
+  "initial": {
+    "description": "Party prep on the island. Robot0 retrieves the five fridge items (apple diverted to the sink for washing); robot1 retrieves the six cabinet items, cups before bowls. The cake goes out only after all four cups are on the island. Fridge and cabinet closed at the end.",
+    "prompt_variants": [
+      {
+        "id": "v1_dense",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Party prep! Robot 0 empties the fridge: the cake, the cheese, the milk and the juice go to the island, and the apple goes to the sink to be washed. Robot 1 empties the cabinet: all four cups and both bowls to the island, cups before bowls. The cake is the centerpiece — it only comes out after all four cups are on the island. Close the fridge and the cabinet when you're done."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      {
+        "id": "v2_reordered",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "We're hosting: robot 1 brings everything that's in the cabinet to the island — cups first, then the bowls. Robot 0 takes everything out of the fridge: cheese, milk and juice to the island, the apple into the sink for a rinse, and the cake to the island last of all — not before every cup is out. Leave the fridge and cabinet closed."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      {
+        "id": "v3_real_user_shorthand",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "r0 = fridge stuff: cheese/milk/juice -> island, apple -> sink, cake -> island (only after all 4 cups are out)\nr1 = cabinet stuff: cups x4 -> island then bowls x2 -> island\nclose fridge + cabinet"
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      }
+    ],
+    "expected": {
+      "required_moves": [
+        { "object": "cake_1", "dest": "island", "robot": "robot0" },
+        { "object": "cheese_1", "dest": "island", "robot": "robot0" },
+        { "object": "milk_1", "dest": "island", "robot": "robot0" },
+        { "object": "juice_1", "dest": "island", "robot": "robot0" },
+        { "object": "apple_1", "dest": "sink", "robot": "robot0" },
+        { "object": "cup_1", "dest": "island", "robot": "robot1" },
+        { "object": "cup_2", "dest": "island", "robot": "robot1" },
+        { "object": "cup_3", "dest": "island", "robot": "robot1" },
+        { "object": "cup_4", "dest": "island", "robot": "robot1" },
+        { "object": "bowl_1", "dest": "island", "robot": "robot1" },
+        { "object": "bowl_2", "dest": "island", "robot": "robot1" }
+      ],
+      "assignment": { "mode": "exact" },
+      "ordering": { "mode": "constrained" },
+      "required_orderings": [
+        { "before": "move_cup_1_island", "after": "move_bowl_1_island" },
+        { "before": "move_cup_2_island", "after": "move_bowl_1_island" },
+        { "before": "move_cup_3_island", "after": "move_bowl_2_island" },
+        { "before": "move_cup_4_island", "after": "move_bowl_2_island" }
+      ],
+      "required_dependencies": [
+        {
+          "action_id": "move_cake_1_island",
+          "after_action_id": "move_cup_1_island"
+        },
+        {
+          "action_id": "move_cake_1_island",
+          "after_action_id": "move_cup_2_island"
+        },
+        {
+          "action_id": "move_cake_1_island",
+          "after_action_id": "move_cup_3_island"
+        },
+        {
+          "action_id": "move_cake_1_island",
+          "after_action_id": "move_cup_4_island"
+        }
+      ],
+      "required_final_facility_states": {
+        "fridge": "closed",
+        "cabinet": "closed"
+      },
+      "allow_derived_facility_actions": true,
+      "allow_additional_user_moves": false
+    }
+  },
+  "revision_base": {
+    "description": "Fixed base matching the dense initial request, with per-source derived closes.",
+    "actions": [
+      {
+        "id": "move_cheese_1_island",
+        "robot": "robot0",
+        "op": "move",
+        "object": "cheese_1",
+        "dest": "island",
+        "serves": "move_cheese_1_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_milk_1_island",
+        "robot": "robot0",
+        "op": "move",
+        "object": "milk_1",
+        "dest": "island",
+        "serves": "move_milk_1_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_juice_1_island",
+        "robot": "robot0",
+        "op": "move",
+        "object": "juice_1",
+        "dest": "island",
+        "serves": "move_juice_1_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_apple_1_sink",
+        "robot": "robot0",
+        "op": "move",
+        "object": "apple_1",
+        "dest": "sink",
+        "serves": "move_apple_1_sink",
+        "robot_locked": true
+      },
+      {
+        "id": "move_cake_1_island",
+        "robot": "robot0",
+        "op": "move",
+        "object": "cake_1",
+        "dest": "island",
+        "serves": "move_cake_1_island",
+        "robot_locked": true,
+        "after": [
+          "move_cup_1_island",
+          "move_cup_2_island",
+          "move_cup_3_island",
+          "move_cup_4_island"
+        ]
+      },
+      {
+        "id": "move_cake_1_island:source:close",
+        "robot": "robot0",
+        "op": "close",
+        "facility": "fridge",
+        "robot_locked": false,
+        "after": [
+          "move_cheese_1_island",
+          "move_milk_1_island",
+          "move_juice_1_island",
+          "move_apple_1_sink",
+          "move_cake_1_island"
+        ]
+      },
+      {
+        "id": "move_cup_1_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "cup_1",
+        "dest": "island",
+        "serves": "move_cup_1_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_cup_2_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "cup_2",
+        "dest": "island",
+        "serves": "move_cup_2_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_cup_3_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "cup_3",
+        "dest": "island",
+        "serves": "move_cup_3_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_cup_4_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "cup_4",
+        "dest": "island",
+        "serves": "move_cup_4_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_bowl_1_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "bowl_1",
+        "dest": "island",
+        "serves": "move_bowl_1_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_bowl_2_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "bowl_2",
+        "dest": "island",
+        "serves": "move_bowl_2_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_cup_1_island:source:close",
+        "robot": "robot1",
+        "op": "close",
+        "facility": "cabinet",
+        "robot_locked": false,
+        "after": [
+          "move_cup_1_island",
+          "move_cup_2_island",
+          "move_cup_3_island",
+          "move_cup_4_island",
+          "move_bowl_1_island",
+          "move_bowl_2_island"
+        ]
+      }
+    ]
+  },
+  "revisions": [
+    {
+      "id": "compound_reassign_bowls_to_robot0",
+      "operation": "compound",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Robot 1 is overloaded — it keeps only the cups; robot 0 takes both bowls too."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      "expected": {
+        "changes": [
+          {
+            "type": "reassign",
+            "action_id": "move_bowl_1_island",
+            "robot": "robot0"
+          },
+          {
+            "type": "reassign",
+            "action_id": "move_bowl_2_island",
+            "robot": "robot0"
+          }
+        ],
+        "preserve": "all_unmentioned_user_tasks",
+        "required_dependencies": [
+          {
+            "action_id": "move_cup_1_island:source:close",
+            "after_action_id": "move_bowl_1_island"
+          },
+          {
+            "action_id": "move_cup_1_island:source:close",
+            "after_action_id": "move_bowl_2_island"
+          }
+        ]
+      }
+    },
+    {
+      "id": "prose_remove_cup_4_and_bowl_2",
+      "operation": "compound",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "We're three people, not four — drop the fourth cup, and one bowl is enough."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      "expected": {
+        "changes": [
+          { "type": "remove", "action_id": "move_cup_4_island" },
+          { "type": "remove", "action_id": "move_bowl_2_island" }
+        ],
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    },
+    {
+      "id": "prose_precedence_cheese_after_bowls",
+      "operation": "precedence",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Hold the cheese until both bowls are on the island."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      "expected": {
+        "changes": [
+          {
+            "type": "precedence",
+            "target_action_id": "move_cheese_1_island",
+            "after_action_id": "move_bowl_1_island"
+          },
+          {
+            "type": "precedence",
+            "target_action_id": "move_cheese_1_island",
+            "after_action_id": "move_bowl_2_island"
+          }
+        ],
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    }
+  ]
+}

@@ -1,0 +1,319 @@
+{
+  "schema_version": 2,
+  "case_set_id": "038-X",
+  "scene": {
+    "id": "layout038_preparing",
+    "xml": "frontend/public/assets/robocasa/layout038_preparing.xml",
+    "manifest": "frontend/public/trajectories/layout038_preparing/skills_manifest.json"
+  },
+  "provenance": {
+    "kind": "benchmark_design",
+    "description": "Wave-2 pilot (C): constraint-dense retrieval — 8 moves, explicit allocation, within-robot ordering, and two cross-robot precedences (milk and juice gated on both bowls)."
+  },
+  "initial": {
+    "description": "Everything to the island. Robot0: bowls then cereals. Robot1: spoons, then milk and juice — but milk and juice only after both bowls are placed. Fridge and open cabinet closed at the end.",
+    "prompt_variants": [
+      {
+        "id": "v1_dense",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Breakfast for two, everything to the island: both bowls, both cereals, both spoons, the milk and the juice. Robot 0 brings the bowls and then the cereals — bowls strictly first. Robot 1 brings the spoons, the milk and the juice, but the milk and the juice must only arrive after both bowls are already on the island. Close the fridge and the cabinet when you're done."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      {
+        "id": "v2_reordered",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Set the island: robot 1 handles spoons, milk and juice — hold both drinks until robot 0 has put both bowls down. Robot 0 handles the bowls and the two cereals, bowls before cereals. Nothing should be left open at the end."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      {
+        "id": "v3_real_user_shorthand",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "island setup:\nr0: bowls 1&2 first, then cereal 1&2\nr1: spoons + milk + juice (milk/juice wait for both bowls)\nfridge + cabinet closed after"
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      }
+    ],
+    "expected": {
+      "required_moves": [
+        { "object": "bowl_1", "dest": "island", "robot": "robot0" },
+        { "object": "bowl_2", "dest": "island", "robot": "robot0" },
+        { "object": "cereal_1", "dest": "island", "robot": "robot0" },
+        { "object": "cereal_2", "dest": "island", "robot": "robot0" },
+        { "object": "spoon_1", "dest": "island", "robot": "robot1" },
+        { "object": "spoon_2", "dest": "island", "robot": "robot1" },
+        { "object": "milk_1", "dest": "island", "robot": "robot1" },
+        { "object": "juice_1", "dest": "island", "robot": "robot1" }
+      ],
+      "assignment": { "mode": "exact" },
+      "ordering": { "mode": "constrained" },
+      "required_orderings": [
+        { "before": "move_bowl_1_island", "after": "move_cereal_1_island" },
+        { "before": "move_bowl_2_island", "after": "move_cereal_1_island" },
+        { "before": "move_bowl_1_island", "after": "move_cereal_2_island" },
+        { "before": "move_bowl_2_island", "after": "move_cereal_2_island" }
+      ],
+      "required_dependencies": [
+        {
+          "action_id": "move_milk_1_island",
+          "after_action_id": "move_bowl_1_island"
+        },
+        {
+          "action_id": "move_milk_1_island",
+          "after_action_id": "move_bowl_2_island"
+        },
+        {
+          "action_id": "move_juice_1_island",
+          "after_action_id": "move_bowl_1_island"
+        },
+        {
+          "action_id": "move_juice_1_island",
+          "after_action_id": "move_bowl_2_island"
+        }
+      ],
+      "required_final_facility_states": {
+        "fridge": "closed",
+        "cabinet_open": "closed"
+      },
+      "allow_derived_facility_actions": true,
+      "allow_additional_user_moves": false
+    }
+  },
+  "revision_base": {
+    "description": "Fixed base matching the dense initial request; cereals close the open cabinet, milk/juice open and close the fridge.",
+    "actions": [
+      {
+        "id": "move_bowl_1_island",
+        "robot": "robot0",
+        "op": "move",
+        "object": "bowl_1",
+        "dest": "island",
+        "serves": "move_bowl_1_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_bowl_2_island",
+        "robot": "robot0",
+        "op": "move",
+        "object": "bowl_2",
+        "dest": "island",
+        "serves": "move_bowl_2_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_cereal_1_island",
+        "robot": "robot0",
+        "op": "move",
+        "object": "cereal_1",
+        "dest": "island",
+        "serves": "move_cereal_1_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_cereal_2_island",
+        "robot": "robot0",
+        "op": "move",
+        "object": "cereal_2",
+        "dest": "island",
+        "serves": "move_cereal_2_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_cereal_1_island:source:close",
+        "robot": "robot0",
+        "op": "close",
+        "facility": "cabinet_open",
+        "robot_locked": false,
+        "after": ["move_cereal_1_island", "move_cereal_2_island"]
+      },
+      {
+        "id": "move_milk_1_island:source:open",
+        "robot": "robot1",
+        "op": "open",
+        "facility": "fridge",
+        "robot_locked": false
+      },
+      {
+        "id": "move_spoon_1_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "spoon_1",
+        "dest": "island",
+        "serves": "move_spoon_1_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_spoon_2_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "spoon_2",
+        "dest": "island",
+        "serves": "move_spoon_2_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_milk_1_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "milk_1",
+        "dest": "island",
+        "serves": "move_milk_1_island",
+        "robot_locked": true,
+        "after": [
+          "move_milk_1_island:source:open",
+          "move_bowl_1_island",
+          "move_bowl_2_island"
+        ]
+      },
+      {
+        "id": "move_juice_1_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "juice_1",
+        "dest": "island",
+        "serves": "move_juice_1_island",
+        "robot_locked": true,
+        "after": [
+          "move_milk_1_island:source:open",
+          "move_bowl_1_island",
+          "move_bowl_2_island"
+        ]
+      },
+      {
+        "id": "move_milk_1_island:source:close",
+        "robot": "robot1",
+        "op": "close",
+        "facility": "fridge",
+        "robot_locked": false,
+        "after": ["move_milk_1_island", "move_juice_1_island"]
+      }
+    ]
+  },
+  "revisions": [
+    {
+      "id": "compound_reassign_cereals_retarget_juice",
+      "operation": "compound",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Robot 1 takes both cereals, and the juice should go to the counter instead of the island."
+          }
+        ],
+        "scene_refs": [
+          { "kind": "facility", "name": "counter" }
+        ],
+        "plan_refs": []
+      },
+      "expected": {
+        "changes": [
+          {
+            "type": "reassign",
+            "action_id": "move_cereal_1_island",
+            "robot": "robot1"
+          },
+          {
+            "type": "reassign",
+            "action_id": "move_cereal_2_island",
+            "robot": "robot1"
+          },
+          {
+            "type": "retarget",
+            "action_id": "move_juice_1_island",
+            "dest": "counter"
+          }
+        ],
+        "preserve": "all_unmentioned_user_tasks",
+        "required_dependencies": [
+          {
+            "action_id": "move_cereal_1_island:source:close",
+            "after_action_id": "move_cereal_1_island"
+          },
+          {
+            "action_id": "move_cereal_1_island:source:close",
+            "after_action_id": "move_cereal_2_island"
+          }
+        ]
+      }
+    },
+    {
+      "id": "prose_remove_bowl_2_cereal_2",
+      "operation": "compound",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Make it breakfast for one: drop the second bowl and the second cereal."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      "expected": {
+        "changes": [
+          { "type": "remove", "action_id": "move_bowl_2_island" },
+          { "type": "remove", "action_id": "move_cereal_2_island" }
+        ],
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    },
+    {
+      "id": "prose_precedence_spoons_after_cereals",
+      "operation": "precedence",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Robot 1 shouldn't place the spoons until both cereals are on the island."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      "expected": {
+        "changes": [
+          {
+            "type": "precedence",
+            "target_action_id": "move_spoon_1_island",
+            "after_action_id": "move_cereal_1_island"
+          },
+          {
+            "type": "precedence",
+            "target_action_id": "move_spoon_1_island",
+            "after_action_id": "move_cereal_2_island"
+          },
+          {
+            "type": "precedence",
+            "target_action_id": "move_spoon_2_island",
+            "after_action_id": "move_cereal_1_island"
+          },
+          {
+            "type": "precedence",
+            "target_action_id": "move_spoon_2_island",
+            "after_action_id": "move_cereal_2_island"
+          }
+        ],
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    }
+  ]
+}

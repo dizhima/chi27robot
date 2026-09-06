@@ -1,0 +1,276 @@
+{
+  "schema_version": 2,
+  "case_set_id": "12-X",
+  "scene": {
+    "id": "layout012_preparing",
+    "xml": "frontend/public/assets/robocasa/layout012_preparing.xml",
+    "manifest": "frontend/public/trajectories/layout012_preparing/skills_manifest.json"
+  },
+  "provenance": {
+    "kind": "benchmark_design",
+    "description": "Wave-2 pilot (C): constraint-dense single-paragraph request — 8 moves, explicit allocation, two within-robot ordering rules, and one cross-robot precedence, all in one colloquial turn."
+  },
+  "initial": {
+    "description": "Breakfast for two on the island. Robot0: bowls then spoons. Robot1: cereal before milk, oranges last, milk only after both bowls are placed. Fridge closed at the end.",
+    "prompt_variants": [
+      {
+        "id": "v1_dense",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Set the island for breakfast: both bowls, both spoons, the cereal, the milk, and both oranges all go to the island. Robot 0 does the bowls and the spoons — bowls first, then spoons. Robot 1 brings the cereal, the milk and the oranges — cereal before the milk, and the oranges last. One more thing: the milk must only come out after both bowls are already on the island. Close the fridge at the end."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      {
+        "id": "v2_reordered",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Breakfast setup, everything to the island. Robot 1 handles cereal, milk and the two oranges, in that spirit: cereal first, then the milk, oranges at the very end — but hold the milk until robot 0 has put both bowls down. Robot 0 handles both bowls and both spoons, bowls before spoons. Don't leave the fridge open."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      {
+        "id": "v3_real_user_shorthand",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "island breakfast:\nr0: bowls 1&2 then spoons 1&2\nr1: cereal -> milk -> oranges 1&2 (milk only after both bowls are down)\nclose fridge after"
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      }
+    ],
+    "expected": {
+      "required_moves": [
+        { "object": "bowl_1", "dest": "island", "robot": "robot0" },
+        { "object": "bowl_2", "dest": "island", "robot": "robot0" },
+        { "object": "spoon_1", "dest": "island", "robot": "robot0" },
+        { "object": "spoon_2", "dest": "island", "robot": "robot0" },
+        { "object": "cereal_1", "dest": "island", "robot": "robot1" },
+        { "object": "milk_1", "dest": "island", "robot": "robot1" },
+        { "object": "orange_1", "dest": "island", "robot": "robot1" },
+        { "object": "orange_2", "dest": "island", "robot": "robot1" }
+      ],
+      "assignment": { "mode": "exact" },
+      "ordering": { "mode": "constrained" },
+      "required_orderings": [
+        { "before": "move_bowl_1_island", "after": "move_spoon_1_island" },
+        { "before": "move_bowl_1_island", "after": "move_spoon_2_island" },
+        { "before": "move_bowl_2_island", "after": "move_spoon_1_island" },
+        { "before": "move_bowl_2_island", "after": "move_spoon_2_island" },
+        { "before": "move_cereal_1_island", "after": "move_milk_1_island" },
+        { "before": "move_milk_1_island", "after": "move_orange_1_island" },
+        { "before": "move_milk_1_island", "after": "move_orange_2_island" }
+      ],
+      "required_dependencies": [
+        {
+          "action_id": "move_milk_1_island",
+          "after_action_id": "move_bowl_1_island"
+        },
+        {
+          "action_id": "move_milk_1_island",
+          "after_action_id": "move_bowl_2_island"
+        }
+      ],
+      "required_final_facility_states": {
+        "fridge": "closed"
+      },
+      "allow_derived_facility_actions": true,
+      "allow_additional_user_moves": false
+    }
+  },
+  "revision_base": {
+    "description": "Fixed base matching the dense initial request; milk and both oranges are fridge-sourced, so the fridge is closed after all three retrievals.",
+    "actions": [
+      {
+        "id": "move_bowl_1_island",
+        "robot": "robot0",
+        "op": "move",
+        "object": "bowl_1",
+        "dest": "island",
+        "serves": "move_bowl_1_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_bowl_2_island",
+        "robot": "robot0",
+        "op": "move",
+        "object": "bowl_2",
+        "dest": "island",
+        "serves": "move_bowl_2_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_spoon_1_island",
+        "robot": "robot0",
+        "op": "move",
+        "object": "spoon_1",
+        "dest": "island",
+        "serves": "move_spoon_1_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_spoon_2_island",
+        "robot": "robot0",
+        "op": "move",
+        "object": "spoon_2",
+        "dest": "island",
+        "serves": "move_spoon_2_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_cereal_1_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "cereal_1",
+        "dest": "island",
+        "serves": "move_cereal_1_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_milk_1_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "milk_1",
+        "dest": "island",
+        "serves": "move_milk_1_island",
+        "robot_locked": true,
+        "after": ["move_bowl_1_island", "move_bowl_2_island"]
+      },
+      {
+        "id": "move_orange_1_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "orange_1",
+        "dest": "island",
+        "serves": "move_orange_1_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_orange_2_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "orange_2",
+        "dest": "island",
+        "serves": "move_orange_2_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_milk_1_island:source:close",
+        "robot": "robot1",
+        "op": "close",
+        "facility": "fridge",
+        "robot_locked": false,
+        "after": [
+          "move_milk_1_island",
+          "move_orange_1_island",
+          "move_orange_2_island"
+        ]
+      }
+    ]
+  },
+  "revisions": [
+    {
+      "id": "compound_swap_spoons_and_oranges",
+      "operation": "compound",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Rebalance it: robot 1 takes both spoons, and robot 0 takes both oranges."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      "expected": {
+        "changes": [
+          {
+            "type": "reassign",
+            "action_id": "move_spoon_1_island",
+            "robot": "robot1"
+          },
+          {
+            "type": "reassign",
+            "action_id": "move_spoon_2_island",
+            "robot": "robot1"
+          },
+          {
+            "type": "reassign",
+            "action_id": "move_orange_1_island",
+            "robot": "robot0"
+          },
+          {
+            "type": "reassign",
+            "action_id": "move_orange_2_island",
+            "robot": "robot0"
+          }
+        ],
+        "preserve": "all_unmentioned_user_tasks",
+        "required_dependencies": [
+          {
+            "action_id": "move_milk_1_island:source:close",
+            "after_action_id": "move_orange_1_island"
+          },
+          {
+            "action_id": "move_milk_1_island:source:close",
+            "after_action_id": "move_orange_2_island"
+          }
+        ]
+      }
+    },
+    {
+      "id": "prose_remove_orange_2",
+      "operation": "remove",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "One orange is enough for breakfast — drop the second one."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      "expected": {
+        "change": { "type": "remove", "action_id": "move_orange_2_island" },
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    },
+    {
+      "id": "prose_precedence_cereal_after_bowl_1",
+      "operation": "precedence",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Robot 1 shouldn't put the cereal out until bowl_1 is on the island."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      "expected": {
+        "change": {
+          "type": "precedence",
+          "target_action_id": "move_cereal_1_island",
+          "after_action_id": "move_bowl_1_island"
+        },
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    }
+  ]
+}

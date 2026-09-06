@@ -1,0 +1,318 @@
+{
+  "schema_version": 2,
+  "case_set_id": "12-B",
+  "scene": {
+    "id": "layout012_preparing",
+    "xml": "frontend/public/assets/robocasa/layout012_preparing.xml",
+    "manifest": "frontend/public/trajectories/layout012_preparing/skills_manifest.json"
+  },
+  "provenance": {
+    "kind": "validation_design",
+    "description": "Implicit mixed-source breakfast preparation"
+  },
+  "initial": {
+    "description": "The system must divide a mixed fridge, cabinet, and counter retrieval task between both robots.",
+    "prompt_variants": [
+      {
+        "id": "v1_source_groups",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Use both robots to prepare a breakfast setting on the island with milk_1 and orange_1 from the fridge, cereal_1 from the upper cabinet, and bowl_1, bowl_2, and spoon_1 from the counter. Decide how to divide the work."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      {
+        "id": "v2_real_user_shorthand",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "use both robots to set up breakfast. milk1 and orange1 from fridge to island; cereal1 from upper cabinet to island; bowl 1&2 and spoon1 from counter to island. close fridge and upper cabinet when done. split the work yourselves"
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      {
+        "id": "v3_real_user_fragmented",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "bring milk 1, cereal 1, bowl 2, orange 1, spoon 1 and bowl 1 over to the island. use both robots. milk/orange are in the fridge and cereal is in upper cabinet; shut those after"
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      }
+    ],
+    "expected": {
+      "required_moves": [
+        { "object": "milk_1", "dest": "island" },
+        { "object": "orange_1", "dest": "island" },
+        { "object": "cereal_1", "dest": "island" },
+        { "object": "bowl_1", "dest": "island" },
+        { "object": "bowl_2", "dest": "island" },
+        { "object": "spoon_1", "dest": "island" }
+      ],
+      "assignment": {
+        "mode": "any_valid",
+        "required_robots": ["robot0", "robot1"]
+      },
+      "ordering": { "mode": "unconstrained" },
+      "required_final_facility_states": {
+        "fridge": "closed",
+        "upper_cabinet": "closed"
+      },
+      "allow_derived_facility_actions": true,
+      "allow_additional_user_moves": false
+    }
+  },
+  "revision_base": {
+    "description": "Fixed balanced base for revisions; it is one valid realization of the implicit initial request, not an initial-authoring sample.",
+    "actions": [
+      {
+        "id": "move_milk_1_island",
+        "robot": "robot0",
+        "op": "move",
+        "object": "milk_1",
+        "dest": "island",
+        "serves": "move_milk_1_island",
+        "robot_locked": false
+      },
+      {
+        "id": "move_orange_1_island",
+        "robot": "robot0",
+        "op": "move",
+        "object": "orange_1",
+        "dest": "island",
+        "serves": "move_orange_1_island",
+        "robot_locked": false
+      },
+      {
+        "id": "move_milk_1_island:source:close",
+        "robot": "robot0",
+        "op": "close",
+        "facility": "fridge",
+        "robot_locked": false,
+        "after": ["move_milk_1_island", "move_orange_1_island"]
+      },
+      {
+        "id": "move_cereal_1_island:source:open",
+        "robot": "robot1",
+        "op": "open",
+        "facility": "upper_cabinet",
+        "robot_locked": false
+      },
+      {
+        "id": "move_cereal_1_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "cereal_1",
+        "dest": "island",
+        "serves": "move_cereal_1_island",
+        "robot_locked": false,
+        "after": ["move_cereal_1_island:source:open"]
+      },
+      {
+        "id": "move_cereal_1_island:source:close",
+        "robot": "robot1",
+        "op": "close",
+        "facility": "upper_cabinet",
+        "robot_locked": false,
+        "after": ["move_cereal_1_island"]
+      },
+      {
+        "id": "move_bowl_1_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "bowl_1",
+        "dest": "island",
+        "serves": "move_bowl_1_island",
+        "robot_locked": false
+      },
+      {
+        "id": "move_bowl_2_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "bowl_2",
+        "dest": "island",
+        "serves": "move_bowl_2_island",
+        "robot_locked": false
+      },
+      {
+        "id": "move_spoon_1_island",
+        "robot": "robot0",
+        "op": "move",
+        "object": "spoon_1",
+        "dest": "island",
+        "serves": "move_spoon_1_island",
+        "robot_locked": false
+      }
+    ]
+  },
+  "revisions": [
+    {
+      "id": "add_orange_2_to_island",
+      "operation": "add",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          { "role": "user", "content": "Also bring orange_2 to the island." }
+        ],
+        "scene_refs": [
+          { "kind": "object", "name": "orange_2" },
+          { "kind": "facility", "name": "island" }
+        ],
+        "plan_refs": []
+      },
+      "expected": {
+        "change": {
+          "type": "add",
+          "action": { "op": "move", "object": "orange_2", "dest": "island" }
+        },
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    },
+    {
+      "id": "remove_bowl_2",
+      "operation": "remove",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Remove robot1 · bowl_2 → island (plan task t1) from the plan."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": [
+          {
+            "kind": "plan_task",
+            "handle": "t1",
+            "action_id": "move_bowl_2_island"
+          }
+        ]
+      },
+      "expected": {
+        "change": { "type": "remove", "action_id": "move_bowl_2_island" },
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    },
+    {
+      "id": "retarget_orange_1_to_sink",
+      "operation": "retarget",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Change robot0 · orange_1 → island (plan task t1) so that orange_1 goes to the sink instead."
+          }
+        ],
+        "scene_refs": [
+          { "kind": "facility", "name": "sink" }
+        ],
+        "plan_refs": [
+          {
+            "kind": "plan_task",
+            "handle": "t1",
+            "action_id": "move_orange_1_island"
+          }
+        ]
+      },
+      "expected": {
+        "change": {
+          "type": "retarget",
+          "action_id": "move_orange_1_island",
+          "dest": "sink"
+        },
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    },
+    {
+      "id": "reassign_cereal_to_robot0",
+      "operation": "reassign",
+      "turn": {
+        "channel": "timeline",
+        "intent_hint": "edit",
+        "messages": [{ "role": "user", "content": "Apply edits" }],
+        "edits": [{
+          "op": "move_task",
+          "target": { "actionId": "move_cereal_1_island" },
+          "robot": "robot0",
+          "afterActionId": "move_milk_1_island:source:close"
+        }]
+      },
+      "expected": {
+        "change": {
+          "type": "reassign",
+          "action_id": "move_cereal_1_island",
+          "robot": "robot0",
+          "after_action_id": "move_milk_1_island:source:close"
+        },
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    },
+    {
+      "id": "reorder_spoon_1_before_milk_1_ref",
+      "operation": "reorder",
+      "turn": {
+        "channel": "conversation",
+        "messages": [{
+          "role": "user",
+          "content": "Move robot0 · spoon_1 → island (plan task t1) immediately before robot0 · milk_1 → island (plan task t2)."
+        }],
+        "scene_refs": [{ "kind": "robot", "name": "robot0" }],
+        "plan_refs": [
+          {
+            "kind": "plan_task",
+            "handle": "t1",
+            "action_id": "move_spoon_1_island"
+          },
+          {
+            "kind": "plan_task",
+            "handle": "t2",
+            "action_id": "move_milk_1_island"
+          }
+        ]
+      },
+      "expected": {
+        "change": {
+          "type": "reorder",
+          "before_action_id": "move_spoon_1_island",
+          "after_action_id": "move_milk_1_island",
+          "immediately_before": true
+        },
+        "preserve": "all_unmentioned_user_tasks",
+        "preserve_facility_assignments": ["move_milk_1_island:source:close"]
+      }
+    },
+    {
+      "id": "precedence_bowl_1_after_milk",
+      "operation": "precedence",
+      "turn": {
+        "channel": "timeline",
+        "intent_hint": "edit",
+        "messages": [{ "role": "user", "content": "Apply edits" }],
+        "edits": [{
+          "op": "set_step_after",
+          "target": { "stepId": "move_bowl_1_island:s0" },
+          "after": ["move_milk_1_island:s4"]
+        }]
+      },
+      "expected": {
+        "change": {
+          "type": "precedence",
+          "target_action_id": "move_bowl_1_island",
+          "after_action_id": "move_milk_1_island"
+        },
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    }
+  ]
+}

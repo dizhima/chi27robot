@@ -1,0 +1,41 @@
+{
+  "schema_version": 2, "case_set_id": "024-H-A",
+  "scene": { "id": "layout024_sorting_heter", "xml": "frontend/public/assets/robocasa/layout024_sorting_heter.xml", "manifest": "frontend/public/trajectories/layout024_sorting_heter/skills_manifest.json" },
+  "provenance": { "kind": "benchmark_design", "description": "Explicit feasible Panda–Stretch sorting and support collaboration" },
+  "initial": {
+    "description": "Panda handles high/top-access storage while Stretch handles fridge and sink placements.",
+    "prompt_variants": [
+      { "id": "v1_robot_first", "channel": "conversation", "messages": [{ "role": "user", "content": "Let robot 0 put bowl_1 and bowl_2 in the cabinet and fork_1 in the drawer. Let robot 1 put apple_1 and orange_1 in the fridge and cup_1 in the sink." }], "scene_refs": [], "plan_refs": [] },
+      { "id": "v2_stretch_first", "channel": "conversation", "messages": [{ "role": "user", "content": "Use robot 1 to place orange_1 and apple_1 in the fridge and cup_1 in the sink. Robot 0 should store both bowls in the cabinet and fork_1 in the drawer." }], "scene_refs": [], "plan_refs": [] },
+      { "id": "v3_grouped", "channel": "conversation", "messages": [{ "role": "user", "content": "Have robot 0 handle bowl_1 and bowl_2 for the cabinet plus fork_1 for the drawer, while robot 1 handles apple_1 and orange_1 for the fridge and cup_1 for the sink." }], "scene_refs": [], "plan_refs": [] }
+    ],
+    "expected": {
+      "required_moves": [
+        { "object": "bowl_1", "dest": "cabinet", "robot": "robot0" }, { "object": "bowl_2", "dest": "cabinet", "robot": "robot0" }, { "object": "fork_1", "dest": "drawer", "robot": "robot0" },
+        { "object": "apple_1", "dest": "fridge", "robot": "robot1" }, { "object": "orange_1", "dest": "fridge", "robot": "robot1" }, { "object": "cup_1", "dest": "sink", "robot": "robot1" }
+      ],
+      "assignment": { "mode": "exact" }, "ordering": { "mode": "unconstrained" }, "required_final_facility_states": { "fridge": "closed" }, "allow_derived_facility_actions": true, "allow_additional_user_moves": false
+    }
+  },
+  "revision_base": {
+    "description": "Fixed feasible Panda–Stretch base.",
+    "actions": [
+      { "id": "move_bowl_1_cabinet", "robot": "robot0", "op": "move", "object": "bowl_1", "dest": "cabinet", "serves": "move_bowl_1_cabinet", "robot_locked": true },
+      { "id": "move_bowl_2_cabinet", "robot": "robot0", "op": "move", "object": "bowl_2", "dest": "cabinet", "serves": "move_bowl_2_cabinet", "robot_locked": true },
+      { "id": "move_fork_1_drawer", "robot": "robot0", "op": "move", "object": "fork_1", "dest": "drawer", "serves": "move_fork_1_drawer", "robot_locked": true },
+      { "id": "move_apple_1_fridge:open", "robot": "robot0", "op": "open", "facility": "fridge", "robot_locked": false },
+      { "id": "move_apple_1_fridge", "robot": "robot1", "op": "move", "object": "apple_1", "dest": "fridge", "serves": "move_apple_1_fridge", "robot_locked": true, "after": ["move_apple_1_fridge:open"] },
+      { "id": "move_orange_1_fridge", "robot": "robot1", "op": "move", "object": "orange_1", "dest": "fridge", "serves": "move_orange_1_fridge", "robot_locked": true, "after": ["move_apple_1_fridge:open"] },
+      { "id": "move_apple_1_fridge:close", "robot": "robot0", "op": "close", "facility": "fridge", "robot_locked": false, "after": ["move_apple_1_fridge", "move_orange_1_fridge"] },
+      { "id": "move_cup_1_sink", "robot": "robot1", "op": "move", "object": "cup_1", "dest": "sink", "serves": "move_cup_1_sink", "robot_locked": true }
+    ]
+  },
+  "revisions": [
+    { "id": "reject_add_fork_2_to_drawer_by_robot1", "operation": "add", "turn": { "channel": "conversation", "messages": [{ "role": "user", "content": "Also have robot 1 put fork_2 in the drawer." }], "scene_refs": [{ "kind": "robot", "name": "robot1" }, { "kind": "object", "name": "fork_2" }, { "kind": "facility", "name": "drawer" }], "plan_refs": [] }, "expected": { "outcome": "rejected", "rejection": { "reason_code": "PLACEMENT_STRATEGY_UNAVAILABLE", "plan_unchanged": true, "compiler_not_run": true, "probe": { "id": "probe", "robot": "robot1", "op": "move", "object": "fork_2", "dest": "drawer" } } } },
+    { "id": "remove_cup_1", "operation": "remove", "turn": { "channel": "conversation", "messages": [{ "role": "user", "content": "Remove robot1 · cup_1 → sink (plan task t1) from the plan." }], "scene_refs": [], "plan_refs": [{ "kind": "plan_task", "handle": "t1", "action_id": "move_cup_1_sink" }] }, "expected": { "change": { "type": "remove", "action_id": "move_cup_1_sink" }, "preserve": "all_unmentioned_user_tasks" } },
+    { "id": "reject_retarget_cup_1_to_cabinet", "operation": "retarget", "turn": { "channel": "conversation", "messages": [{ "role": "user", "content": "Change robot1 · cup_1 → sink (plan task t1) so cup_1 goes to the cabinet instead." }], "scene_refs": [{ "kind": "facility", "name": "cabinet" }], "plan_refs": [{ "kind": "plan_task", "handle": "t1", "action_id": "move_cup_1_sink" }] }, "expected": { "outcome": "rejected", "rejection": { "reason_code": "FACILITY_ABOVE_REACHABLE_HEIGHT", "plan_unchanged": true, "compiler_not_run": true, "probe": { "id": "move_cup_1_sink", "robot": "robot1", "op": "move", "object": "cup_1", "dest": "cabinet" } } } },
+    { "id": "reject_reassign_bowl_1_to_robot1", "operation": "reassign", "turn": { "channel": "timeline", "intent_hint": "edit", "messages": [{ "role": "user", "content": "Apply edits" }], "edits": [{ "op": "move_task", "target": { "actionId": "move_bowl_1_cabinet" }, "robot": "robot1", "afterActionId": "move_cup_1_sink" }] }, "expected": { "outcome": "rejected", "rejection": { "reason_code": "FACILITY_ABOVE_REACHABLE_HEIGHT", "plan_unchanged": true, "compiler_not_run": true, "probe": { "id": "move_bowl_1_cabinet", "robot": "robot1", "op": "move", "object": "bowl_1", "dest": "cabinet" } } } },
+    { "id": "reorder_orange_1_before_apple_1", "operation": "reorder", "turn": { "channel": "timeline", "intent_hint": "edit", "messages": [{ "role": "user", "content": "Apply edits" }], "edits": [{ "op": "move_task", "target": { "actionId": "move_orange_1_fridge" }, "robot": "robot1", "afterActionId": null }] }, "expected": { "change": { "type": "reorder", "before_action_id": "move_orange_1_fridge", "after_action_id": "move_apple_1_fridge" }, "preserve": "all_unmentioned_user_tasks" } },
+    { "id": "precedence_cup_1_after_bowl_1", "operation": "precedence", "turn": { "channel": "timeline", "intent_hint": "edit", "messages": [{ "role": "user", "content": "Apply edits" }], "edits": [{ "op": "set_step_after", "target": { "stepId": "move_cup_1_sink:s0" }, "after": ["move_bowl_1_cabinet:s4"] }] }, "expected": { "change": { "type": "precedence", "target_action_id": "move_cup_1_sink", "after_action_id": "move_bowl_1_cabinet" }, "preserve": "all_unmentioned_user_tasks" } }
+  ]
+}

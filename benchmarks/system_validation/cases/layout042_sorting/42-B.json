@@ -1,0 +1,314 @@
+{
+  "schema_version": 2,
+  "case_set_id": "42-B",
+  "scene": {
+    "id": "layout042_sorting",
+    "xml": "frontend/public/assets/robocasa/layout042_sorting.xml",
+    "manifest": "frontend/public/trajectories/layout042_sorting/skills_manifest.json"
+  },
+  "provenance": {
+    "kind": "validation_design",
+    "description": "Implicit multi-destination island sorting"
+  },
+  "initial": {
+    "description": "The system must choose a valid division of work while using both robots.",
+    "prompt_variants": [
+      {
+        "id": "v1_object_groups",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Use both robots to clean up the island. Put apple_1 and apple_2 in the fridge, mug_1 and mug_2 in the sink, and canned_food_1 and condiment_bottle_1 in the upper cabinet. Decide how to divide the work."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      {
+        "id": "v2_real_user_shorthand",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "use both robots. apple 1&2 -> fridge, mug 1&2 -> sink, canned food 1 and condiment bottle 1 -> upper cabinet. close fridge and cabinet when done. you decide who does each"
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      {
+        "id": "v3_real_user_procedural",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "put apple1 then apple2 in the fridge. mugs 1&2 go sink. canned food1 and condiment bottle1 go upper cabinet. use both robots and split it up; fridge and cabinet should end closed."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      }
+    ],
+    "expected": {
+      "required_moves": [
+        { "object": "apple_1", "dest": "fridge" },
+        { "object": "apple_2", "dest": "fridge" },
+        { "object": "mug_1", "dest": "sink" },
+        { "object": "mug_2", "dest": "sink" },
+        { "object": "canned_food_1", "dest": "upper_cabinet" },
+        { "object": "condiment_bottle_1", "dest": "upper_cabinet" }
+      ],
+      "assignment": {
+        "mode": "any_valid",
+        "required_robots": ["robot0", "robot1"]
+      },
+      "ordering": { "mode": "unconstrained" },
+      "required_final_facility_states": {
+        "fridge": "closed",
+        "upper_cabinet": "closed"
+      },
+      "allow_derived_facility_actions": true,
+      "allow_additional_user_moves": false
+    }
+  },
+  "revision_base": {
+    "description": "Fixed balanced base for revisions; it is one valid realization of the implicit initial request, not an initial-authoring sample.",
+    "actions": [
+      {
+        "id": "move_apple_1_fridge:open",
+        "robot": "robot0",
+        "op": "open",
+        "facility": "fridge",
+        "robot_locked": false
+      },
+      {
+        "id": "move_apple_1_fridge",
+        "robot": "robot0",
+        "op": "move",
+        "object": "apple_1",
+        "dest": "fridge",
+        "serves": "move_apple_1_fridge",
+        "robot_locked": false,
+        "after": ["move_apple_1_fridge:open"]
+      },
+      {
+        "id": "move_apple_2_fridge",
+        "robot": "robot0",
+        "op": "move",
+        "object": "apple_2",
+        "dest": "fridge",
+        "serves": "move_apple_2_fridge",
+        "robot_locked": false,
+        "after": ["move_apple_1_fridge:open"]
+      },
+      {
+        "id": "move_apple_1_fridge:close",
+        "robot": "robot0",
+        "op": "close",
+        "facility": "fridge",
+        "robot_locked": false,
+        "after": ["move_apple_1_fridge", "move_apple_2_fridge"]
+      },
+      {
+        "id": "move_mug_1_sink",
+        "robot": "robot1",
+        "op": "move",
+        "object": "mug_1",
+        "dest": "sink",
+        "serves": "move_mug_1_sink",
+        "robot_locked": false
+      },
+      {
+        "id": "move_mug_2_sink",
+        "robot": "robot1",
+        "op": "move",
+        "object": "mug_2",
+        "dest": "sink",
+        "serves": "move_mug_2_sink",
+        "robot_locked": false
+      },
+      {
+        "id": "move_canned_food_1_upper_cabinet",
+        "robot": "robot0",
+        "op": "move",
+        "object": "canned_food_1",
+        "dest": "upper_cabinet",
+        "serves": "move_canned_food_1_upper_cabinet",
+        "robot_locked": false
+      },
+      {
+        "id": "move_condiment_bottle_1_upper_cabinet",
+        "robot": "robot1",
+        "op": "move",
+        "object": "condiment_bottle_1",
+        "dest": "upper_cabinet",
+        "serves": "move_condiment_bottle_1_upper_cabinet",
+        "robot_locked": false
+      },
+      {
+        "id": "move_canned_food_1_upper_cabinet:close",
+        "robot": "robot1",
+        "op": "close",
+        "facility": "upper_cabinet",
+        "robot_locked": false,
+        "after": [
+          "move_canned_food_1_upper_cabinet",
+          "move_condiment_bottle_1_upper_cabinet"
+        ]
+      }
+    ]
+  },
+  "revisions": [
+    {
+      "id": "add_lemon_1_to_fridge",
+      "operation": "add",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          { "role": "user", "content": "Also put lemon_1 in the fridge." }
+        ],
+        "scene_refs": [
+          { "kind": "object", "name": "lemon_1" },
+          { "kind": "facility", "name": "fridge" }
+        ],
+        "plan_refs": []
+      },
+      "expected": {
+        "change": {
+          "type": "add",
+          "action": { "op": "move", "object": "lemon_1", "dest": "fridge" }
+        },
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    },
+    {
+      "id": "remove_condiment",
+      "operation": "remove",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Remove robot1 · condiment_bottle_1 → upper_cabinet (plan task t1) from the plan."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": [
+          {
+            "kind": "plan_task",
+            "handle": "t1",
+            "action_id": "move_condiment_bottle_1_upper_cabinet"
+          }
+        ]
+      },
+      "expected": {
+        "change": {
+          "type": "remove",
+          "action_id": "move_condiment_bottle_1_upper_cabinet"
+        },
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    },
+    {
+      "id": "retarget_canned_food_to_drawer_right",
+      "operation": "retarget",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Change robot0 · canned_food_1 → upper_cabinet (plan task t1) so that canned_food_1 goes to drawer_right instead."
+          }
+        ],
+        "scene_refs": [
+          { "kind": "facility", "name": "drawer_right" }
+        ],
+        "plan_refs": [
+          {
+            "kind": "plan_task",
+            "handle": "t1",
+            "action_id": "move_canned_food_1_upper_cabinet"
+          }
+        ]
+      },
+      "expected": {
+        "change": {
+          "type": "retarget",
+          "action_id": "move_canned_food_1_upper_cabinet",
+          "dest": "drawer_right"
+        },
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    },
+    {
+      "id": "reassign_canned_food_to_robot1",
+      "operation": "reassign",
+      "turn": {
+        "channel": "timeline",
+        "intent_hint": "edit",
+        "messages": [{ "role": "user", "content": "Apply edits" }],
+        "edits": [{
+          "op": "move_task",
+          "target": { "actionId": "move_canned_food_1_upper_cabinet" },
+          "robot": "robot1",
+          "afterActionId": "move_mug_2_sink"
+        }]
+      },
+      "expected": {
+        "change": {
+          "type": "reassign",
+          "action_id": "move_canned_food_1_upper_cabinet",
+          "robot": "robot1",
+          "after_action_id": "move_mug_2_sink"
+        },
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    },
+    {
+      "id": "reorder_mug_2_before_mug_1",
+      "operation": "reorder",
+      "turn": {
+        "channel": "timeline",
+        "intent_hint": "edit",
+        "messages": [{ "role": "user", "content": "Apply edits" }],
+        "edits": [{
+          "op": "move_task",
+          "target": { "actionId": "move_mug_2_sink" },
+          "robot": "robot1",
+          "afterActionId": null
+        }]
+      },
+      "expected": {
+        "change": {
+          "type": "reorder",
+          "before_action_id": "move_mug_2_sink",
+          "after_action_id": "move_mug_1_sink"
+        },
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    },
+    {
+      "id": "precedence_condiment_after_apple_2",
+      "operation": "precedence",
+      "turn": {
+        "channel": "timeline",
+        "intent_hint": "edit",
+        "messages": [{ "role": "user", "content": "Apply edits" }],
+        "edits": [{
+          "op": "set_step_after",
+          "target": { "stepId": "move_condiment_bottle_1_upper_cabinet:s0" },
+          "after": ["move_apple_2_fridge:s4"]
+        }]
+      },
+      "expected": {
+        "change": {
+          "type": "precedence",
+          "target_action_id": "move_condiment_bottle_1_upper_cabinet",
+          "after_action_id": "move_apple_2_fridge"
+        },
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    }
+  ]
+}

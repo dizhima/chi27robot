@@ -1,0 +1,274 @@
+{
+  "schema_version": 2,
+  "case_set_id": "038-H-X",
+  "scene": {
+    "id": "layout038_preparing_heter",
+    "xml": "frontend/public/assets/robocasa/layout038_preparing_heter.xml",
+    "manifest": "frontend/public/trajectories/layout038_preparing_heter/skills_manifest.json"
+  },
+  "provenance": {
+    "kind": "benchmark_design",
+    "description": "Wave-2 pilot (E): eligibility-aware allocation under underspecification. The user leaves the split open, but the Stretch (robot1) cannot move bowls or cereals at all, so those four moves are forced onto robot0 while spoons/milk/juice stay free."
+  },
+  "initial": {
+    "description": "All eight breakfast items to the island, allocation left to the system, both robots must contribute. Bowls and cereals are only feasible for robot0.",
+    "prompt_variants": [
+      {
+        "id": "v1_category",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Bring everything for breakfast to the island: both bowls, both cereals, the milk, the juice, and both spoons. Split the work between the two robots — both of them should contribute. Close the fridge and the cabinet when you're done."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      {
+        "id": "v2_goal_state",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "I want the island fully set for breakfast — bowls, cereals, milk, juice, spoons, all of it. Divide the tasks between the robots however makes sense, but don't leave one robot idle, and everything openable should end up closed."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      {
+        "id": "v3_real_user_shorthand",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "everything -> island (bowls x2, cereal x2, milk, juice, spoons x2). split between the robots, both should work. close fridge + cabinet after"
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      }
+    ],
+    "expected": {
+      "required_moves": [
+        { "object": "bowl_1", "dest": "island", "robot": "robot0" },
+        { "object": "bowl_2", "dest": "island", "robot": "robot0" },
+        { "object": "cereal_1", "dest": "island", "robot": "robot0" },
+        { "object": "cereal_2", "dest": "island", "robot": "robot0" },
+        { "object": "milk_1", "dest": "island" },
+        { "object": "juice_1", "dest": "island" },
+        { "object": "spoon_1", "dest": "island" },
+        { "object": "spoon_2", "dest": "island" }
+      ],
+      "assignment": {
+        "mode": "unconstrained",
+        "required_robots": ["robot0", "robot1"]
+      },
+      "ordering": { "mode": "unconstrained" },
+      "required_final_facility_states": {
+        "fridge": "closed",
+        "cabinet_open": "closed"
+      },
+      "allow_derived_facility_actions": true,
+      "allow_additional_user_moves": false
+    }
+  },
+  "revision_base": {
+    "description": "Fixed feasible base: robot0 handles bowls, cereals, and fridge articulation; robot1 handles spoons, milk, and juice.",
+    "actions": [
+      {
+        "id": "move_bowl_1_island",
+        "robot": "robot0",
+        "op": "move",
+        "object": "bowl_1",
+        "dest": "island",
+        "serves": "move_bowl_1_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_bowl_2_island",
+        "robot": "robot0",
+        "op": "move",
+        "object": "bowl_2",
+        "dest": "island",
+        "serves": "move_bowl_2_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_cereal_1_island",
+        "robot": "robot0",
+        "op": "move",
+        "object": "cereal_1",
+        "dest": "island",
+        "serves": "move_cereal_1_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_cereal_2_island",
+        "robot": "robot0",
+        "op": "move",
+        "object": "cereal_2",
+        "dest": "island",
+        "serves": "move_cereal_2_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_cereal_1_island:source:close",
+        "robot": "robot0",
+        "op": "close",
+        "facility": "cabinet_open",
+        "robot_locked": false,
+        "after": ["move_cereal_1_island", "move_cereal_2_island"]
+      },
+      {
+        "id": "move_milk_1_island:source:open",
+        "robot": "robot0",
+        "op": "open",
+        "facility": "fridge",
+        "robot_locked": false
+      },
+      {
+        "id": "move_spoon_1_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "spoon_1",
+        "dest": "island",
+        "serves": "move_spoon_1_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_spoon_2_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "spoon_2",
+        "dest": "island",
+        "serves": "move_spoon_2_island",
+        "robot_locked": true
+      },
+      {
+        "id": "move_milk_1_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "milk_1",
+        "dest": "island",
+        "serves": "move_milk_1_island",
+        "robot_locked": true,
+        "after": ["move_milk_1_island:source:open"]
+      },
+      {
+        "id": "move_juice_1_island",
+        "robot": "robot1",
+        "op": "move",
+        "object": "juice_1",
+        "dest": "island",
+        "serves": "move_juice_1_island",
+        "robot_locked": true,
+        "after": ["move_milk_1_island:source:open"]
+      },
+      {
+        "id": "move_milk_1_island:source:close",
+        "robot": "robot0",
+        "op": "close",
+        "facility": "fridge",
+        "robot_locked": false,
+        "after": ["move_milk_1_island", "move_juice_1_island"]
+      }
+    ]
+  },
+  "revisions": [
+    {
+      "id": "reject_reassign_bowls_to_stretch",
+      "operation": "reassign",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Split it more evenly — robot 1 should take the bowls."
+          }
+        ],
+        "scene_refs": [
+          { "kind": "robot", "name": "robot1" }
+        ],
+        "plan_refs": []
+      },
+      "expected": {
+        "outcome": "rejected",
+        "rejection": {
+          "reason_code": "OBJECT_OUTSIDE_ASSIGNED_SET",
+          "plan_unchanged": true,
+          "compiler_not_run": true,
+          "probe": {
+            "id": "move_bowl_1_island",
+            "robot": "robot1",
+            "op": "move",
+            "object": "bowl_1",
+            "dest": "island"
+          }
+        }
+      }
+    },
+    {
+      "id": "compound_remove_cereal_2_reassign_juice",
+      "operation": "compound",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "One cereal is enough — drop cereal_2. And robot 0 should bring the juice instead."
+          }
+        ],
+        "scene_refs": [
+          { "kind": "robot", "name": "robot0" }
+        ],
+        "plan_refs": []
+      },
+      "expected": {
+        "changes": [
+          { "type": "remove", "action_id": "move_cereal_2_island" },
+          {
+            "type": "reassign",
+            "action_id": "move_juice_1_island",
+            "robot": "robot0"
+          }
+        ],
+        "preserve": "all_unmentioned_user_tasks",
+        "required_dependencies": [
+          {
+            "action_id": "move_juice_1_island",
+            "after_action_id": "move_milk_1_island:source:open"
+          },
+          {
+            "action_id": "move_milk_1_island:source:close",
+            "after_action_id": "move_juice_1_island"
+          }
+        ]
+      }
+    },
+    {
+      "id": "prose_precedence_spoon_1_after_bowl_1",
+      "operation": "precedence",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Robot 1 must wait until bowl_1 is on the island before placing spoon_1."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      "expected": {
+        "change": {
+          "type": "precedence",
+          "target_action_id": "move_spoon_1_island",
+          "after_action_id": "move_bowl_1_island"
+        },
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    }
+  ]
+}

@@ -1,0 +1,288 @@
+{
+  "schema_version": 2,
+  "case_set_id": "42-X",
+  "scene": {
+    "id": "layout042_sorting",
+    "xml": "frontend/public/assets/robocasa/layout042_sorting.xml",
+    "manifest": "frontend/public/trajectories/layout042_sorting/skills_manifest.json"
+  },
+  "provenance": {
+    "kind": "benchmark_design",
+    "description": "Wave-2 pilot (C): constraint-dense sort — explicit allocation and per-robot ordering, apples gated cross-robot on both mugs, distractors (canned_food_1, condiment_bottle_1) explicitly excluded."
+  },
+  "initial": {
+    "description": "Robot0: lemons to the fridge (lemon_1 first) then apples to counter_mid — but only after robot1 has both mugs in the sink (mug_2 first). Distractors stay put. Fridge closed at the end.",
+    "prompt_variants": [
+      {
+        "id": "v1_dense",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Robot 0: both lemons into the fridge, lemon_1 first, and close it afterwards. Robot 1: both mugs into the sink, mug_2 first. The apples go to counter_mid — robot 0 handles them, but only after both mugs are in the sink. Don't touch the canned food or the condiment bottle."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      {
+        "id": "v2_reordered",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Sort the island: mugs to the sink via robot 1 (start with mug_2), lemons to the fridge via robot 0 (lemon_1 goes in first, fridge closed after). Robot 0 also moves both apples to counter_mid, but the apples must wait until both mugs are in the sink. Leave the canned food and the condiment bottle alone."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      {
+        "id": "v3_real_user_shorthand",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "r0: lemon1 -> fridge, then lemon2 -> fridge, close it. then apples -> counter_mid (but only after r1 has both mugs in the sink)\nr1: mug2 -> sink first, then mug1\ncanned food + condiment: don't move"
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      }
+    ],
+    "expected": {
+      "required_moves": [
+        { "object": "lemon_1", "dest": "fridge", "robot": "robot0" },
+        { "object": "lemon_2", "dest": "fridge", "robot": "robot0" },
+        { "object": "apple_1", "dest": "counter_mid", "robot": "robot0" },
+        { "object": "apple_2", "dest": "counter_mid", "robot": "robot0" },
+        { "object": "mug_1", "dest": "sink", "robot": "robot1" },
+        { "object": "mug_2", "dest": "sink", "robot": "robot1" }
+      ],
+      "assignment": { "mode": "exact" },
+      "ordering": { "mode": "constrained" },
+      "required_orderings": [
+        { "before": "move_lemon_1_fridge", "after": "move_lemon_2_fridge" },
+        { "before": "move_mug_2_sink", "after": "move_mug_1_sink" }
+      ],
+      "required_dependencies": [
+        {
+          "action_id": "move_apple_1_counter_mid",
+          "after_action_id": "move_mug_1_sink"
+        },
+        {
+          "action_id": "move_apple_1_counter_mid",
+          "after_action_id": "move_mug_2_sink"
+        },
+        {
+          "action_id": "move_apple_2_counter_mid",
+          "after_action_id": "move_mug_1_sink"
+        },
+        {
+          "action_id": "move_apple_2_counter_mid",
+          "after_action_id": "move_mug_2_sink"
+        }
+      ],
+      "required_final_facility_states": {
+        "fridge": "closed"
+      },
+      "allow_derived_facility_actions": true,
+      "allow_additional_user_moves": false
+    }
+  },
+  "revision_base": {
+    "description": "Fixed base matching the dense initial request.",
+    "actions": [
+      {
+        "id": "move_lemon_1_fridge:open",
+        "robot": "robot0",
+        "op": "open",
+        "facility": "fridge",
+        "robot_locked": true
+      },
+      {
+        "id": "move_lemon_1_fridge",
+        "robot": "robot0",
+        "op": "move",
+        "object": "lemon_1",
+        "dest": "fridge",
+        "serves": "move_lemon_1_fridge",
+        "robot_locked": true,
+        "after": ["move_lemon_1_fridge:open"]
+      },
+      {
+        "id": "move_lemon_2_fridge",
+        "robot": "robot0",
+        "op": "move",
+        "object": "lemon_2",
+        "dest": "fridge",
+        "serves": "move_lemon_2_fridge",
+        "robot_locked": true,
+        "after": ["move_lemon_1_fridge:open", "move_lemon_1_fridge"]
+      },
+      {
+        "id": "move_lemon_1_fridge:close",
+        "robot": "robot0",
+        "op": "close",
+        "facility": "fridge",
+        "robot_locked": true,
+        "after": ["move_lemon_1_fridge", "move_lemon_2_fridge"]
+      },
+      {
+        "id": "move_apple_1_counter_mid",
+        "robot": "robot0",
+        "op": "move",
+        "object": "apple_1",
+        "dest": "counter_mid",
+        "serves": "move_apple_1_counter_mid",
+        "robot_locked": true,
+        "after": ["move_mug_1_sink", "move_mug_2_sink"]
+      },
+      {
+        "id": "move_apple_2_counter_mid",
+        "robot": "robot0",
+        "op": "move",
+        "object": "apple_2",
+        "dest": "counter_mid",
+        "serves": "move_apple_2_counter_mid",
+        "robot_locked": true,
+        "after": ["move_mug_1_sink", "move_mug_2_sink"]
+      },
+      {
+        "id": "move_mug_2_sink",
+        "robot": "robot1",
+        "op": "move",
+        "object": "mug_2",
+        "dest": "sink",
+        "serves": "move_mug_2_sink",
+        "robot_locked": true
+      },
+      {
+        "id": "move_mug_1_sink",
+        "robot": "robot1",
+        "op": "move",
+        "object": "mug_1",
+        "dest": "sink",
+        "serves": "move_mug_1_sink",
+        "robot_locked": true,
+        "after": ["move_mug_2_sink"]
+      }
+    ]
+  },
+  "revisions": [
+    {
+      "id": "compound_swap_fridge_crew",
+      "operation": "compound",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Swap the whole split: robot 1 takes both lemons and the fridge work, robot 0 takes both mugs."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      "expected": {
+        "changes": [
+          {
+            "type": "reassign",
+            "action_id": "move_lemon_1_fridge",
+            "robot": "robot1"
+          },
+          {
+            "type": "reassign",
+            "action_id": "move_lemon_2_fridge",
+            "robot": "robot1"
+          },
+          {
+            "type": "reassign",
+            "action_id": "move_mug_1_sink",
+            "robot": "robot0"
+          },
+          {
+            "type": "reassign",
+            "action_id": "move_mug_2_sink",
+            "robot": "robot0"
+          }
+        ],
+        "preserve": "all_unmentioned_user_tasks",
+        "required_dependencies": [
+          {
+            "action_id": "move_lemon_1_fridge",
+            "after_action_id": "move_lemon_1_fridge:open"
+          },
+          {
+            "action_id": "move_lemon_2_fridge",
+            "after_action_id": "move_lemon_1_fridge:open"
+          },
+          {
+            "action_id": "move_lemon_1_fridge:close",
+            "after_action_id": "move_lemon_1_fridge"
+          },
+          {
+            "action_id": "move_lemon_1_fridge:close",
+            "after_action_id": "move_lemon_2_fridge"
+          }
+        ]
+      }
+    },
+    {
+      "id": "compound_remove_fridge_tasks",
+      "operation": "compound",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "The lemons can stay out — drop both fridge tasks from the plan."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      "expected": {
+        "changes": [
+          { "type": "remove", "action_id": "move_lemon_1_fridge" },
+          { "type": "remove", "action_id": "move_lemon_2_fridge" }
+        ],
+        "preserve": "all_unmentioned_user_tasks",
+        "required_absent_action_ids": [
+          "move_lemon_1_fridge:open",
+          "move_lemon_1_fridge:close"
+        ]
+      }
+    },
+    {
+      "id": "compound_reverse_both_sequences",
+      "operation": "compound",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Reverse both sequences: lemon_2 goes into the fridge before lemon_1, and mug_1 goes into the sink before mug_2."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      "expected": {
+        "changes": [
+          {
+            "type": "reorder",
+            "before_action_id": "move_lemon_2_fridge",
+            "after_action_id": "move_lemon_1_fridge"
+          },
+          {
+            "type": "reorder",
+            "before_action_id": "move_mug_1_sink",
+            "after_action_id": "move_mug_2_sink"
+          }
+        ],
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    }
+  ]
+}

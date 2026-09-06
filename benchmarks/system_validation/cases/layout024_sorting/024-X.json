@@ -1,0 +1,318 @@
+{
+  "schema_version": 2,
+  "case_set_id": "024-X",
+  "scene": {
+    "id": "layout024_sorting",
+    "xml": "frontend/public/assets/robocasa/layout024_sorting.xml",
+    "manifest": "frontend/public/trajectories/layout024_sorting/skills_manifest.json"
+  },
+  "provenance": {
+    "kind": "benchmark_design",
+    "description": "Wave-2 pilot (C): constraint-dense sort — three destination categories, exclusive allocation rule stated negatively ('robot 0 must not touch the sink items'), within-robot ordering, and cross-robot precedence."
+  },
+  "initial": {
+    "description": "Cutlery to drawer (robot0, forks before spoons), cups to sink and bowls to cabinet (robot1, cups first). Bowls only after both forks are in the drawer. Drawer and cabinet closed at the end.",
+    "prompt_variants": [
+      {
+        "id": "v1_dense",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Time to tidy up. All four pieces of cutlery — both forks and both spoons — go in the drawer; robot 0 does those, forks before spoons. Robot 1 puts the cups in the sink and then the bowls away in the cabinet — cups first. Robot 0 must not touch any of the sink or cabinet items. Also, don't start the bowls until both forks are already in the drawer. Close the drawer and the cabinet when done."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      {
+        "id": "v2_reordered",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Robot 1 handles the wet stuff: both cups into the sink, then both bowls into the cabinet — but the bowls have to wait until robot 0 has both forks in the drawer. Robot 0 only does cutlery: forks into the drawer first, spoons after. Everything openable ends up closed."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      {
+        "id": "v3_real_user_shorthand",
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "r0: forks -> drawer, then spoons -> drawer (cutlery only!)\nr1: cups -> sink, then bowls -> cabinet (bowls only after both forks are in the drawer)\nclose drawer + cabinet"
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      }
+    ],
+    "expected": {
+      "required_moves": [
+        { "object": "fork_1", "dest": "drawer", "robot": "robot0" },
+        { "object": "fork_2", "dest": "drawer", "robot": "robot0" },
+        { "object": "spoon_1", "dest": "drawer", "robot": "robot0" },
+        { "object": "spoon_2", "dest": "drawer", "robot": "robot0" },
+        { "object": "cup_1", "dest": "sink", "robot": "robot1" },
+        { "object": "cup_2", "dest": "sink", "robot": "robot1" },
+        { "object": "bowl_1", "dest": "cabinet", "robot": "robot1" },
+        { "object": "bowl_2", "dest": "cabinet", "robot": "robot1" }
+      ],
+      "assignment": { "mode": "exact" },
+      "ordering": { "mode": "constrained" },
+      "required_orderings": [
+        { "before": "move_fork_1_drawer", "after": "move_spoon_1_drawer" },
+        { "before": "move_fork_1_drawer", "after": "move_spoon_2_drawer" },
+        { "before": "move_fork_2_drawer", "after": "move_spoon_1_drawer" },
+        { "before": "move_fork_2_drawer", "after": "move_spoon_2_drawer" },
+        { "before": "move_cup_1_sink", "after": "move_bowl_1_cabinet" },
+        { "before": "move_cup_2_sink", "after": "move_bowl_1_cabinet" },
+        { "before": "move_cup_1_sink", "after": "move_bowl_2_cabinet" },
+        { "before": "move_cup_2_sink", "after": "move_bowl_2_cabinet" }
+      ],
+      "required_dependencies": [
+        {
+          "action_id": "move_bowl_1_cabinet",
+          "after_action_id": "move_fork_1_drawer"
+        },
+        {
+          "action_id": "move_bowl_1_cabinet",
+          "after_action_id": "move_fork_2_drawer"
+        },
+        {
+          "action_id": "move_bowl_2_cabinet",
+          "after_action_id": "move_fork_1_drawer"
+        },
+        {
+          "action_id": "move_bowl_2_cabinet",
+          "after_action_id": "move_fork_2_drawer"
+        }
+      ],
+      "required_final_facility_states": {
+        "drawer": "closed",
+        "cabinet": "closed"
+      },
+      "allow_derived_facility_actions": true,
+      "allow_additional_user_moves": false
+    }
+  },
+  "revision_base": {
+    "description": "Fixed base matching the dense initial request, with derived drawer/cabinet closes.",
+    "actions": [
+      {
+        "id": "move_fork_1_drawer",
+        "robot": "robot0",
+        "op": "move",
+        "object": "fork_1",
+        "dest": "drawer",
+        "serves": "move_fork_1_drawer",
+        "robot_locked": true
+      },
+      {
+        "id": "move_fork_2_drawer",
+        "robot": "robot0",
+        "op": "move",
+        "object": "fork_2",
+        "dest": "drawer",
+        "serves": "move_fork_2_drawer",
+        "robot_locked": true
+      },
+      {
+        "id": "move_spoon_1_drawer",
+        "robot": "robot0",
+        "op": "move",
+        "object": "spoon_1",
+        "dest": "drawer",
+        "serves": "move_spoon_1_drawer",
+        "robot_locked": true
+      },
+      {
+        "id": "move_spoon_2_drawer",
+        "robot": "robot0",
+        "op": "move",
+        "object": "spoon_2",
+        "dest": "drawer",
+        "serves": "move_spoon_2_drawer",
+        "robot_locked": true
+      },
+      {
+        "id": "move_fork_1_drawer:close",
+        "robot": "robot0",
+        "op": "close",
+        "facility": "drawer",
+        "robot_locked": false,
+        "after": [
+          "move_fork_1_drawer",
+          "move_fork_2_drawer",
+          "move_spoon_1_drawer",
+          "move_spoon_2_drawer"
+        ]
+      },
+      {
+        "id": "move_cup_1_sink",
+        "robot": "robot1",
+        "op": "move",
+        "object": "cup_1",
+        "dest": "sink",
+        "serves": "move_cup_1_sink",
+        "robot_locked": true
+      },
+      {
+        "id": "move_cup_2_sink",
+        "robot": "robot1",
+        "op": "move",
+        "object": "cup_2",
+        "dest": "sink",
+        "serves": "move_cup_2_sink",
+        "robot_locked": true
+      },
+      {
+        "id": "move_bowl_1_cabinet",
+        "robot": "robot1",
+        "op": "move",
+        "object": "bowl_1",
+        "dest": "cabinet",
+        "serves": "move_bowl_1_cabinet",
+        "robot_locked": true,
+        "after": ["move_fork_1_drawer", "move_fork_2_drawer"]
+      },
+      {
+        "id": "move_bowl_2_cabinet",
+        "robot": "robot1",
+        "op": "move",
+        "object": "bowl_2",
+        "dest": "cabinet",
+        "serves": "move_bowl_2_cabinet",
+        "robot_locked": true,
+        "after": ["move_fork_1_drawer", "move_fork_2_drawer"]
+      },
+      {
+        "id": "move_bowl_1_cabinet:close",
+        "robot": "robot1",
+        "op": "close",
+        "facility": "cabinet",
+        "robot_locked": false,
+        "after": ["move_bowl_1_cabinet", "move_bowl_2_cabinet"]
+      }
+    ]
+  },
+  "revisions": [
+    {
+      "id": "compound_reassign_forks_retarget_cups",
+      "operation": "compound",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Two changes: robot 1 takes over both forks, and the cups should go to the clean counter instead of the sink."
+          }
+        ],
+        "scene_refs": [
+          { "kind": "facility", "name": "clean_counter" }
+        ],
+        "plan_refs": []
+      },
+      "expected": {
+        "changes": [
+          {
+            "type": "reassign",
+            "action_id": "move_fork_1_drawer",
+            "robot": "robot1"
+          },
+          {
+            "type": "reassign",
+            "action_id": "move_fork_2_drawer",
+            "robot": "robot1"
+          },
+          {
+            "type": "retarget",
+            "action_id": "move_cup_1_sink",
+            "dest": "clean_counter"
+          },
+          {
+            "type": "retarget",
+            "action_id": "move_cup_2_sink",
+            "dest": "clean_counter"
+          }
+        ],
+        "preserve": "all_unmentioned_user_tasks",
+        "required_dependencies": [
+          {
+            "action_id": "move_fork_1_drawer:close",
+            "after_action_id": "move_fork_1_drawer"
+          },
+          {
+            "action_id": "move_fork_1_drawer:close",
+            "after_action_id": "move_fork_2_drawer"
+          }
+        ]
+      }
+    },
+    {
+      "id": "prose_remove_both_spoons",
+      "operation": "compound",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Leave the spoons where they are — take both spoon tasks out of the plan."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      "expected": {
+        "changes": [
+          { "type": "remove", "action_id": "move_spoon_1_drawer" },
+          { "type": "remove", "action_id": "move_spoon_2_drawer" }
+        ],
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    },
+    {
+      "id": "prose_precedence_cabinet_after_drawer_done",
+      "operation": "precedence",
+      "turn": {
+        "channel": "conversation",
+        "messages": [
+          {
+            "role": "user",
+            "content": "The bowls should also wait for the spoons — nothing goes into the cabinet until all four pieces of cutlery are in the drawer."
+          }
+        ],
+        "scene_refs": [],
+        "plan_refs": []
+      },
+      "expected": {
+        "changes": [
+          {
+            "type": "precedence",
+            "target_action_id": "move_bowl_1_cabinet",
+            "after_action_id": "move_spoon_1_drawer"
+          },
+          {
+            "type": "precedence",
+            "target_action_id": "move_bowl_1_cabinet",
+            "after_action_id": "move_spoon_2_drawer"
+          },
+          {
+            "type": "precedence",
+            "target_action_id": "move_bowl_2_cabinet",
+            "after_action_id": "move_spoon_1_drawer"
+          },
+          {
+            "type": "precedence",
+            "target_action_id": "move_bowl_2_cabinet",
+            "after_action_id": "move_spoon_2_drawer"
+          }
+        ],
+        "preserve": "all_unmentioned_user_tasks"
+      }
+    }
+  ]
+}
