@@ -1217,7 +1217,9 @@ canvas {
   white-space: nowrap;
   user-select: none;
   pointer-events: none;
-  transform: scale(var(--label-zoom-scale, 1));
+  transform:
+    scale(var(--scene-label-scale, 1))
+    scale(var(--label-zoom-scale, 1));
   transform-origin: center;
 }
 
@@ -1250,7 +1252,9 @@ canvas {
   white-space: nowrap;
   user-select: none;
   pointer-events: none;
-  transform: scale(var(--label-zoom-scale, 1));
+  transform:
+    scale(var(--scene-label-scale, 1))
+    scale(var(--label-zoom-scale, 1));
   transform-origin: center;
 }
 
